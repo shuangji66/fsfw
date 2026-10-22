@@ -1,5 +1,7 @@
 # FSFW — fpkstudio for Windows
 
+仓库：<https://github.com/shuangji66/fsfw>
+
 FSFW 是 [fpkstudio](https://github.com/shuangji66/fpkstudio) 的 Windows 桌面版：在
 Windows 10 / 11 上浏览、编辑、打包 fnOS 的 fpk 项目，产出标准 `.msi` 安装包。
 
@@ -73,13 +75,16 @@ Windows 10 / 11 上浏览、编辑、打包 fnOS 的 fpk 项目，产出标准 `
 npm install
 npm --prefix frontend install
 
+# 可选：注入版本号（同时改 tauri.conf.json / Cargo.toml / Cargo.lock）
+node scripts/set-version.mjs 1.0.1
+
 npm run build
 ```
 
 产物：
 
 ```
-src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\fpkstudio for Windows_1.0.0_x64_zh-CN.msi
+src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\fpkstudio for Windows_1.0.1_x64_zh-CN.msi
 ```
 
 `npm run build` 依次做三件事：
@@ -99,8 +104,18 @@ npm run check
 ```
 
 > Go 单元测试里的假 fnpack 是 `#!/bin/sh` 脚本，解压测试还会造符号链接 / FIFO；这些在
-> Windows 上跑不了。CI 把测试放在 `ubuntu-latest`，Windows runner 只构建 MSI 并做
-> 真实安装/卸载冒烟。
+> Windows 上跑不了，请在 WSL / Linux 上跑。GitHub Actions 的 `windows-msi` 只负责
+> 构建 MSI，不再跑测试或安装/卸载冒烟。
+
+### GitHub Actions
+
+手动触发 `windows-msi`，填写版本号（`x.y.z`），workflow 会：
+
+1. `node scripts/set-version.mjs <version>` 注入版本；
+2. `npm run build` 直接出 MSI；
+3. 上传 `fsfw-msi-<version>` artifact。
+
+没有测试 job，也没有安装/卸载冒烟步骤。
 
 ### 开发
 

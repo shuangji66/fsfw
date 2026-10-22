@@ -24,6 +24,7 @@ npm run dev                      # 后端 → tauri dev
 npm run typecheck                # vue-tsc
 npm run check                    # 前端 10 个检查脚本
 npm run test:backend             # cd backend && go test ./...（POSIX 测试，Windows 上用 WSL）
+npm run set-version -- 1.0.1     # 同时改 tauri.conf / Cargo.toml / Cargo.lock
 ```
 
 单独的步骤：
@@ -88,7 +89,7 @@ src-tauri/
   tauri.conf.json          CSP、externalBin、MSI 配置
 scripts/build-backend.*    后端构建 + staging vendor/fnpack.exe
 vendor/fnpack.exe         随包分发的官方 fnpack（amd64），不要用 src-tauri/binaries 里的副本改它
-.github/workflows/         windows-latest 出 MSI
+.github/workflows/         windows-latest 构建 MSI（手动输入版本，无测试/冒烟）
 ```
 
 ## 约定
@@ -111,6 +112,10 @@ vendor/fnpack.exe         随包分发的官方 fnpack（amd64），不要用 sr
   否则会闪控制台窗口。
 - **per-user 是硬约束**：`InstallScope="perUser"` + `LocalAppDataFolder`，不要改回
   `perMachine` / Program Files；不要新增需要管理员权限的自定义动作。
+- **版本号**：只通过 `node scripts/set-version.mjs <x.y.z>` 改，必须同时更新
+  `tauri.conf.json`、`Cargo.toml`、`Cargo.lock`；Go 后端版本由构建脚本从
+  `tauri.conf.json` 读取。前端「关于」显示的版本来自 Tauri 注入的
+  `window.__FSFW__.version`（即 Cargo 包版本），不要另外写死。
 - 卸载清理：只在 `REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE` 时执行；升级不能删数据。
   静默卸载用 `CLEANDOCS=0/1` 跳过询问。
 

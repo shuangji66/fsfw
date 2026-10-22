@@ -78,6 +78,11 @@
       <section class="border-t border-slate-200 pt-3 dark:border-slate-700">
         <div class="flex items-center gap-2">
           <span class="text-lg font-medium text-slate-700 dark:text-slate-200">{{ t('settings.about.title') }}</span>
+          <span
+            class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium tabular-nums text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+          >
+            {{ versionLabel }}
+          </span>
           <a
             :href="REPO_URL"
             target="_blank"
@@ -121,6 +126,7 @@ import {
 import { useThemeStore, type ThemeMode } from '@/stores/theme'
 import { useLocaleStore } from '@/stores/locale'
 import type { LocaleMode } from '@/i18n'
+import { appVersion } from '@/runtime'
 
 type Slot = 'projectRoot' | 'outputDir'
 
@@ -135,7 +141,10 @@ const LOCALE_MODES: { value: LocaleMode; labelKey: string }[] = [
 ]
 
 /** 仓库地址：关于一节里的图标链到这里。 */
-const REPO_URL = 'https://github.com/shuangji66/fpkstudio'
+const REPO_URL = 'https://github.com/shuangji66/fsfw'
+
+/** 开发模式（普通浏览器 / tauri dev 未注入版本）显示 dev，打包后显示 v1.0.1。 */
+const versionLabel = computed(() => (appVersion === 'dev' ? 'dev' : `v${appVersion}`))
 
 /**
  * 绝对路径：盘符 + 分隔符（`C:\...`），或 UNC（`\\server\share`）。

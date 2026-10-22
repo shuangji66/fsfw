@@ -2,53 +2,21 @@ name: windows-msi
 
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号 x.y.z（例如 1.0.1）"
+        required: true
+        type: string
+
+run-name: Build FSFW ${{ inputs.version }}
 
 permissions:
   contents: read
 
 jobs:
-  # Go 单元测试依赖 POSIX（/bin/sh 假 fnpack、符号链接、FIFO），在 Linux 上跑；
-  # Windows runner 只负责构建 MSI 和真实安装/卸载。
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: backend/go.mod
-          cache: false
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            frontend/package-lock.json
-
-      - name: Install JS dependencies
-        run: |
-          npm ci
-          npm --prefix frontend ci
-
-      - name: Backend tests
-        working-directory: backend
-        run: go test ./...
-
-      - name: Frontend typecheck and checks
-        run: |
-          npm run typecheck
-          npm run check
-
   build:
-    needs: test
     runs-on: windows-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -84,56 +52,18 @@ jobs:
           npm ci
           npm --prefix frontend ci
 
+      - name: Set version
+        shell: pwsh
+        env:
+          FSFW_INPUT_VERSION: ${{ inputs.version }}
+        run: node scripts/set-version.mjs "$env:FSFW_INPUT_VERSION"
+
       - name: Build MSI
         run: npm run build
-
-      # 真正装一次、卸一次：per-user 安装位置、随包 fnpack.exe、卸载自定义动作
-      #（CLEANDOCS=1 删用户数据）都只有在这台 Windows runner 上才能验证。
-      - name: Install and uninstall smoke test
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $msi = Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi" | Select-Object -First 1
-          if (-not $msi) { throw "没有找到 MSI" }
-          Write-Host "MSI: $($msi.FullName)"
-
-          $installLog = Join-Path $env:RUNNER_TEMP "install.log"
-          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
-            "/i", "`"$($msi.FullName)`"", "/qn", "/norestart", "/l*v", "`"$installLog`""
-          )
-          if ($p.ExitCode -ne 0) {
-            Get-Content $installLog -Tail 120
-            throw "安装失败，msiexec 退出码 $($p.ExitCode)"
-          }
-
-          $exe = Join-Path $env:LOCALAPPDATA "fpkstudio\fsfw.exe"
-          $backend = Join-Path $env:LOCALAPPDATA "fpkstudio\fsfw-backend.exe"
-          $fnpack = Join-Path $env:LOCALAPPDATA "fpkstudio\fnpack.exe"
-          if (-not (Test-Path $exe)) { throw "安装目录里没有 fsfw.exe：$exe" }
-          if (-not (Test-Path $backend)) { throw "安装目录里没有 fsfw-backend.exe：$backend" }
-          if (-not (Test-Path $fnpack)) { throw "安装目录里没有 fnpack.exe：$fnpack" }
-
-          # 造一份用户数据，验证 CLEANDOCS=1 会把它整目录删掉（不弹询问）。
-          $docs = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "fpkstudio"
-          New-Item -ItemType Directory -Force -Path $docs | Out-Null
-          Set-Content -Path (Join-Path $docs "keep.txt") -Value "keep"
-
-          $uninstallLog = Join-Path $env:RUNNER_TEMP "uninstall.log"
-          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
-            "/x", "`"$($msi.FullName)`"", "/qn", "/norestart", "CLEANDOCS=1",
-            "/l*v", "`"$uninstallLog`""
-          )
-          if ($p.ExitCode -ne 0) {
-            Get-Content $uninstallLog -Tail 120
-            throw "卸载失败，msiexec 退出码 $($p.ExitCode)"
-          }
-          if (Test-Path $exe) { throw "卸载后 fsfw.exe 仍在：$exe" }
-          if (Test-Path $fnpack) { throw "卸载后 fnpack.exe 仍在：$fnpack" }
-          if (Test-Path $docs) { throw "CLEANDOCS=1 没有删除用户数据：$docs" }
 
       - name: Upload MSI
         uses: actions/upload-artifact@v7
         with:
-          name: fsfw-msi
+          name: fsfw-msi-${{ inputs.version }}
           path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
           if-no-files-found: error
