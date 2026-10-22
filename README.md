@@ -42,7 +42,11 @@ Windows 10 / 11 上浏览、编辑、打包 fnOS 的 fpk 项目，产出标准 `
 ```
 
 `Documents` 由 Windows 已知文件夹接口解析，OneDrive 重定向过的机器也会落到正确位置。
-安装目录、快捷方式、WebView2 缓存都在 `%LOCALAPPDATA%` 下，不写注册表 HKLM，不需要管理员权限。
+
+项目、导出、日志、设置（`state.json`）都在这里。唯一例外是 WebView2 的浏览器配置目录
+（`%LOCALAPPDATA%\com.fpkstudio.fsfw`），里面只放界面偏好（主题 / 语言）和缓存；
+放在 LocalAppData 是为了避免把频繁写入的缓存同步到 OneDrive。卸载时会一并删除。
+安装目录、快捷方式也都在 `%LOCALAPPDATA%` 下，不写注册表 HKLM，不需要管理员权限。
 
 ## 构建
 
