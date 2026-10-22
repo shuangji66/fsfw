@@ -140,8 +140,17 @@ npm run dev
 
 ## 安装与卸载
 
-- 安装包是 **per-user MSI**：装到 `%LOCALAPPDATA%\fpkstudio`，开始菜单与桌面
-  快捷方式、控制面板「应用」里的卸载项都在当前用户名下，不需要 UAC。
+- 安装包是 **per-user MSI**：装到 `%LOCALAPPDATA%\fpkstudio`，开始菜单快捷方式、
+  控制面板「应用」里的卸载项都在当前用户名下，不需要 UAC。
+- 安装向导的「安装选项」页有两个默认勾选的选项：
+  - **创建桌面图标**
+  - **安装完成后打开 fpkstudio for Windows**
+
+  取消勾选即可跳过；静默安装不显示该页，默认创建桌面图标。不想创建时传
+  `CREATE_DESKTOP_SHORTCUT=0`：
+  ```bat
+  msiexec /i "fpkstudio for Windows_1.0.1_x64_zh-CN.msi" /qn CREATE_DESKTOP_SHORTCUT=0
+  ```
 - 关闭主窗口 = 收进托盘；托盘菜单「退出」才会结束进程（同时停掉 Go 后端）。
 - 覆盖安装 / 升级 / 卸载之前，请先从托盘菜单退出：后台进程还在时 Windows Installer
   会提示「文件正在使用」，要求先关掉程序。

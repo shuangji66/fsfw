@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="zh-CN" xmlns="http://schemas.microsoft.com/wix/2006/localization">
+  <String Id="OptionsDlgTitle">安装选项</String>
+  <String Id="OptionsDlgDescription">选择安装时要执行的操作。</String>
+  <String Id="OptionsCreateDesktopShortcut">创建桌面图标</String>
+  <String Id="OptionsLaunchApp">安装完成后打开 fpkstudio for Windows</String>
+</WixLocalization>

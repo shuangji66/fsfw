@@ -42,9 +42,11 @@
         "silent": true
       },
       "wix": {
-        "language": [
-          "zh-CN"
-        ],
+        "language": {
+          "zh-CN": {
+            "localePath": "wix/locale-zh-CN.wxl"
+          }
+        },
         "upgradeCode": "8E2C41D6-2B7A-5F03-9C48-6A1D7E3B9F52",
         "template": "wix/main.wxs"
       }

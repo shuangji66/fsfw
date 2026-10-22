@@ -116,6 +116,11 @@ vendor/fnpack.exe         随包分发的官方 fnpack（amd64），不要用 sr
   `tauri.conf.json`、`Cargo.toml`、`Cargo.lock`；Go 后端版本由构建脚本从
   `tauri.conf.json` 读取。前端「关于」显示的版本来自 Tauri 注入的
   `window.__FSFW__.version`（即 Cargo 包版本），不要另外写死。
+- **安装选项**：`CREATE_DESKTOP_SHORTCUT` / `LAUNCH_APP` 默认 `1`，由 `OptionsDlg`
+  的两个 CheckBox 控制。桌面快捷方式靠组件 `<Condition>` 决定是否安装；「安装后打开」
+  靠 `ExitDialog` 的 `DoAction` 条件。安装器文案在 `wix/locale-zh-CN.wxl`，
+  **WXS 必须保持 ASCII**，中文只放 WXL；改 WXL 路径时同步
+  `tauri.conf.json` 的 `bundle.windows.wix.language`。
 - 卸载清理：只在 `REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE` 时执行；升级不能删数据。
   静默卸载用 `CLEANDOCS=0/1` 跳过询问。
 
