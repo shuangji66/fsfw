@@ -69,9 +69,24 @@ finally {
 }
 Assert-PeAmd64 $backendOut "backend"
 
+# SHA-256 without Get-FileHash: some PowerShell hosts on CI do not expose the
+# Microsoft.PowerShell.Utility cmdlet. .NET is always available.
+function Get-Sha256Hex([string]$FilePath) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($FilePath)
+    try {
+        $bytes = $sha.ComputeHash($stream)
+    }
+    finally {
+        $stream.Dispose()
+        $sha.Dispose()
+    }
+    return (-join ($bytes | ForEach-Object { $_.ToString("x2") }))
+}
+
 Write-Host "==> staging vendor fnpack.exe"
 if (-not (Test-Path $fnpackSrc)) { throw "vendor fnpack.exe not found: $fnpackSrc" }
-$actualFnpackSha256 = (Get-FileHash -Algorithm SHA256 -Path $fnpackSrc).Hash
+$actualFnpackSha256 = Get-Sha256Hex $fnpackSrc
 if ($actualFnpackSha256 -ne $expectedFnpackSha256) {
     throw ("vendor/fnpack.exe SHA-256 mismatch: expected {0}, got {1}" -f $expectedFnpackSha256, $actualFnpackSha256)
 }
