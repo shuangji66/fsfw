@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -416,31 +417,12 @@ func (s *Server) handleFsDownload(w http.ResponseWriter, r *http.Request) error 
 		// 中途失败（某个文件读不了——ACL 模型文件系统上的 0000 模式文件正是这形态）会留下一个
 		// 「结构完整、里面是 0 字节条目」的 zip，用户拿到 200 却永远不知道少了东西。
 		// 代价是下载期间多占一份临时空间，换来的是「失败能说清楚」。
-		tmp, err := os.CreateTemp(s.cfg.TmpDir, "download-*.zip")
+		tmp, size, cleanup, err := s.buildDirZip(root, rel, layout)
 		if err != nil {
-			return internal("创建下载临时文件失败: %v", err)
-		}
-		tmpName := tmp.Name()
-		defer func() {
-			_ = tmp.Close()
-			_ = os.Remove(tmpName)
-		}()
-
-		var skip func(string) bool
-		if layout == "package" {
-			skip = packageSkipper(rel)
-		}
-		if err := root.ZipDirExcept(rel, tmp, skip); err != nil {
 			s.log.Warnf("打包下载 %s 失败: %v", rel, err)
 			return internal("打包目录失败: %v", err)
 		}
-		size, err := tmp.Seek(0, io.SeekEnd)
-		if err != nil {
-			return internal("读取下载临时文件失败: %v", err)
-		}
-		if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-			return internal("读取下载临时文件失败: %v", err)
-		}
+		defer cleanup()
 
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
@@ -466,6 +448,103 @@ func (s *Server) handleFsDownload(w http.ResponseWriter, r *http.Request) error 
 		s.log.Warnf("下载 %s 中断: %v", rel, err)
 	}
 	return nil
+}
+
+// buildDirZip 把 rel 目录打成 zip，写在数据目录的临时文件里。
+//
+// 返回的文件已经 Seek 回开头；调用方负责调用 cleanup。下载（要 Content-Length）
+// 和导出到本机（要原子写到用户选的位置）共用这一段。
+func (s *Server) buildDirZip(root *fsx.Root, rel, layout string) (*os.File, int64, func(), error) {
+	tmp, err := os.CreateTemp(s.cfg.TmpDir, "download-*.zip")
+	if err != nil {
+		return nil, 0, nil, fmt.Errorf("创建下载临时文件失败: %w", err)
+	}
+	tmpName := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+	}
+
+	var skip func(string) bool
+	if layout == "package" {
+		skip = packageSkipper(rel)
+	}
+	if err := root.ZipDirExcept(rel, tmp, skip); err != nil {
+		cleanup()
+		return nil, 0, nil, err
+	}
+	size, err := tmp.Seek(0, io.SeekEnd)
+	if err != nil {
+		cleanup()
+		return nil, 0, nil, fmt.Errorf("读取临时 zip 失败: %w", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return nil, 0, nil, fmt.Errorf("读取临时 zip 失败: %w", err)
+	}
+	return tmp, size, cleanup, nil
+}
+
+// handleFsExport 把项目目录打成 zip，直接写到系统保存对话框选定的路径。
+//
+// 前端先调 Tauri 的 save() 拿到绝对路径再发这里；普通浏览器开发时前端不会走这条
+// 路（还是用下载）。zip 仍然先落到数据目录的临时文件再复制过去：目标目录有可能
+// 就在项目里面，边遍历边写目标文件会把半截 zip 打进自己。
+func (s *Server) handleFsExport(w http.ResponseWriter, r *http.Request) error {
+	if err := requireMethods(r, http.MethodPost); err != nil {
+		return err
+	}
+	var req struct {
+		Path     string `json:"path"`
+		SavePath string `json:"savePath"`
+		Layout   string `json:"layout"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	rel, err := fsx.Rel(req.Path)
+	if err != nil {
+		return badRequest("%v", err)
+	}
+	layout := strings.TrimSpace(req.Layout)
+	if layout != "" && layout != "package" {
+		return badRequest("layout 只支持 package")
+	}
+	savePath, err := cleanSavePath(req.SavePath)
+	if err != nil {
+		return err
+	}
+
+	root := s.prj.Root()
+	st, err := root.Stat(rel)
+	if err != nil {
+		return fsError("目标不存在", err)
+	}
+
+	var src io.Reader
+	if st.Dir {
+		tmp, _, cleanup, err := s.buildDirZip(root, rel, layout)
+		if err != nil {
+			s.log.Warnf("打包导出 %s 失败: %v", rel, err)
+			return internal("打包目录失败: %v", err)
+		}
+		defer cleanup()
+		src = tmp
+	} else {
+		f, _, err := root.OpenFile(rel)
+		if err != nil {
+			return fsError("导出失败", err)
+		}
+		defer f.Close()
+		src = f
+	}
+
+	n, err := saveToPath(savePath, src)
+	if err != nil {
+		return saveError(savePath, err)
+	}
+	s.log.Infof("导出 %s 到 %s（%s）", rel, savePath, fsx.HumanSize(n))
+	return writeJSON(w, map[string]any{"ok": true, "path": savePath, "size": n})
 }
 
 // fpkPackageTopLevel 是 fpk 包允许出现在项目根下的名字。

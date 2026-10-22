@@ -109,3 +109,74 @@ func TestRevealLaunchFailure(t *testing.T) {
 		t.Fatalf("状态码 = %d（%v），期望 500", code, body)
 	}
 }
+
+// 图标导出：把 base64 字节写到保存对话框给的绝对路径。
+func TestSystemSaveFile(t *testing.T) {
+	s, _ := newTestServer(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "icon.png")
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 1, 2, 3}
+
+	code, body := doJSON(t, s, "/api/system/save-file", map[string]any{
+		"path": target,
+		// encoding/json 把 []byte 编成 base64，和前端传的字符串对齐。
+		"data": png,
+	})
+	if code != http.StatusOK {
+		t.Fatalf("状态码 = %d（%v），期望 200", code, body)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("目标文件不存在: %v", err)
+	}
+	if string(got) != string(png) {
+		t.Errorf("写出的内容 = %v，期望 %v", got, png)
+	}
+
+	// 覆盖已有文件
+	next := []byte("second")
+	if code, body = doJSON(t, s, "/api/system/save-file", map[string]any{"path": target, "data": next}); code != http.StatusOK {
+		t.Fatalf("覆盖保存：状态码 = %d（%v），期望 200", code, body)
+	}
+	if got, _ := os.ReadFile(target); string(got) != string(next) {
+		t.Errorf("覆盖后内容 = %q，期望 %q", got, next)
+	}
+
+	// 保存失败不能把旧文件截断：把目标换成一个不存在的目录。
+	code, _ = doJSON(t, s, "/api/system/save-file", map[string]any{
+		"path": filepath.Join(dir, "missing", "icon.png"),
+		"data": png,
+	})
+	if code != http.StatusBadRequest {
+		t.Errorf("不存在的目录：状态码 = %d，期望 400", code)
+	}
+	if got, _ := os.ReadFile(target); string(got) != string(next) {
+		t.Errorf("失败路径不该动到旧文件，现在是 %q", got)
+	}
+}
+
+func TestSystemSaveFileValidation(t *testing.T) {
+	s, _ := newTestServer(t)
+
+	cases := []struct {
+		name string
+		body map[string]any
+		want int
+	}{
+		{"相对路径", map[string]any{"path": "icon.png", "data": []byte("x")}, http.StatusBadRequest},
+		{"空路径", map[string]any{"path": "  ", "data": []byte("x")}, http.StatusBadRequest},
+		{"空内容", map[string]any{"path": filepath.Join(t.TempDir(), "x.png")}, http.StatusBadRequest},
+		{"目标是目录", map[string]any{"path": t.TempDir(), "data": []byte("x")}, http.StatusBadRequest},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if code, body := doJSON(t, s, "/api/system/save-file", tc.body); code != tc.want {
+				t.Errorf("状态码 = %d（%v），期望 %d", code, body, tc.want)
+			}
+		})
+	}
+
+	if rec := serve(s, http.MethodGet, "/api/system/save-file", nil); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET 状态码 = %d，期望 405", rec.Code)
+	}
+}

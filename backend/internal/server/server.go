@@ -81,6 +81,7 @@ func (s *Server) routes() {
 	s.api("/api/system/info", s.handleSystemInfo)
 	s.api("/api/system/fnpack", s.handleSystemFnpack)
 	s.api("/api/system/reveal", s.handleSystemReveal)
+	s.api("/api/system/save-file", s.handleSystemSaveFile)
 
 	s.api("/api/projects", s.handleProjects)
 	s.api("/api/projects/create", s.handleProjectCreate)
@@ -104,6 +105,7 @@ func (s *Server) routes() {
 	s.api("/api/fs/upload", s.handleFsUpload)
 	s.api("/api/fs/extract", s.handleFsExtract)
 	s.api("/api/fs/download", s.handleFsDownload)
+	s.api("/api/fs/export", s.handleFsExport)
 
 	s.api("/api/logs", s.handleLogs)
 	s.api("/api/logs/stream", s.handleLogStream)

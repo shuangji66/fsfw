@@ -122,13 +122,10 @@
       {{ t('common.loading') }}
     </div>
 
-    <div v-else-if="!showEditor" class="flex flex-1 flex-col items-center justify-center gap-3">
+    <div v-else-if="!showEditor" class="flex flex-1 items-center justify-center">
       <p class="text-xs text-slate-500 dark:text-slate-400">
         {{ tab.tooLarge ? t('editor.tooLarge', { size: tab.sizeRaw }) : t('editor.binary') }}
       </p>
-      <el-button size="default" @click="workspace.downloadAt(`${project}/${tab.path}`)">
-        {{ t('common.download') }}
-      </el-button>
     </div>
 
     <div v-else class="min-h-0 flex-1">

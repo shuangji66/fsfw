@@ -79,6 +79,12 @@ authentication is disabled.
 
 - `POST /api/system/reveal` `{ "path": "<absolute path>" }` → open the path in
   Windows Explorer (`explorer.exe`). Returns `{ "ok": true }`.
+- `POST /api/fs/export` `{ "path", "savePath", "layout"?: "package" }` → write the
+  directory zip (same layout rules as `/api/fs/download`) to the absolute path
+  picked by the native save dialog. Returns `{ "ok", "path", "size" }`.
+- `POST /api/system/save-file` `{ "path", "data": "<base64>" }` → write bytes to
+  the absolute path picked by the native save dialog (icon export). Returns
+  `{ "ok", "path", "size" }`.
 
 ### Settings
 
@@ -133,12 +139,17 @@ export function isDesktopHost(): boolean
 export function isHostAvailable(): boolean        // alias, true in Tauri
 export async function openInFileManager(path: string): Promise<void>
 export async function pickUserDirectory(title: string): Promise<string[]>
-export async function pickUserFiles(title: string, accept: string[]): Promise<string[]>
+export async function pickSavePath(options: {
+  defaultPath: string
+  title: string
+  accept?: string[]
+}): Promise<string | null>
 export function hostErrorMessage(err: unknown): string
 ```
 
 - `openInFileManager` → `POST /api/system/reveal` (works in dev too).
-- pickers → `@tauri-apps/plugin-dialog`; outside Tauri they reject with
-  `HostUnavailableError` and callers show the localized hint.
+- pickers / save dialog → `@tauri-apps/plugin-dialog`; outside Tauri they reject
+  with `HostUnavailableError` and callers show the localized hint. Writing the
+  picked file is done by the Go API, not the webview.
 - theme follows `prefers-color-scheme` only; no host theme bridge.
 - `src/utils/semantic.ts`, `src/trim/**`, `scripts/check-semantic.mjs` are deleted.

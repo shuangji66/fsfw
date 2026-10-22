@@ -134,3 +134,12 @@ export interface SettingsInfo {
   dirs: DirSettings
   dataDir: string
 }
+
+/** 导出 / 保存到本机后的结果。 */
+export interface SaveResult {
+  ok: boolean
+  /** 实际写入的绝对路径。 */
+  path: string
+  /** 写入的字节数。 */
+  size: number
+}

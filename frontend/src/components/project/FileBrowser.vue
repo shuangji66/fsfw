@@ -186,6 +186,7 @@
           ]"
           data-fs-entry
           @click="onEntryClick(entry, $event)"
+          @dblclick="open(entry)"
           @contextmenu.prevent="openMenu(entry, $event)"
         >
           <el-icon class="shrink-0" :class="iconClass(entry)">
@@ -203,6 +204,7 @@
             class="w-7 shrink-0 cursor-pointer rounded p-1 text-lg text-slate-300 transition-colors hover:bg-slate-200 hover:text-slate-700 dark:text-slate-600 dark:hover:bg-slate-600 dark:hover:text-slate-200"
             :title="t('tree.more')"
             @click.stop="openMenu(entry, $event)"
+            @dblclick.stop
           >
             <MoreFilled />
           </el-icon>
@@ -226,6 +228,7 @@
           ]"
           data-fs-entry
           @click="onEntryClick(entry, $event)"
+          @dblclick="open(entry)"
           @contextmenu.prevent="openMenu(entry, $event)"
         >
           <el-icon class="text-2xl" :class="iconClass(entry)">
@@ -243,6 +246,7 @@
             class="absolute right-0.5 top-0.5 cursor-pointer rounded p-1 text-xl text-slate-300 transition-colors hover:bg-slate-200 hover:text-slate-700 dark:text-slate-600 dark:hover:bg-slate-600 dark:hover:text-slate-200"
             :title="t('tree.more')"
             @click.stop="openMenu(entry, $event)"
+            @dblclick.stop
           >
             <MoreFilled />
           </el-icon>
@@ -295,7 +299,6 @@ import {
 import type { FsEntry } from '@/api/types'
 import NewEntryDialog from './NewEntryDialog.vue'
 import { useUpload } from './useUpload'
-import { useDownload } from './useDownload'
 import { useOpenFolder } from './useOpenFolder'
 import { useTabsStore } from '@/stores/tabs'
 import { FILES_TAB, useWorkspaceStore } from '@/stores/workspace'
@@ -310,7 +313,6 @@ const { t } = useI18n()
 const workspace = useWorkspaceStore()
 const tabs = useTabsStore()
 const { upload, cancel: cancelUpload, busy: uploading, percent: uploadPercent } = useUpload()
-const { download } = useDownload()
 const { canOpenFolder, openFolder } = useOpenFolder(() => props.project)
 const { copy: copyPaths, paste: pasteAt, undo } = useFileClipboard(() => props.project)
 
@@ -377,7 +379,7 @@ function iconClass(entry: FsEntry): string {
 
 // ---- 导航 ----
 
-/** 进目录 / 开文件：两种排布下的单击都是这个行为。 */
+/** 进目录 / 开文件：双击触发（单击只改选择，见 onEntryClick）。 */
 function open(entry: FsEntry) {
   if (entry.dir) {
     go(entryPath(entry))
@@ -386,9 +388,14 @@ function open(entry: FsEntry) {
   void workspace.openFile(props.project, entryPath(entry))
 }
 
-/** 单击：带 Ctrl / Cmd / Shift 时只改选择，不打开（多选时不该开出一堆文件标签）。 */
+/**
+ * 单击只改选择，打开是双击的事（和 Windows 资源管理器一致）。
+ *
+ * 以前单击就直接开文件 / 进目录，想多选时很容易误开一堆标签；现在 Ctrl / Shift
+ * 的多选语义不变，普通单击也只是选中。
+ */
 function onEntryClick(entry: FsEntry, event: MouseEvent) {
-  selectClick(entryPath(entry), event, () => open(entry))
+  selectClick(entryPath(entry), event, () => undefined)
 }
 
 /** 点空白处取消选择（行 / 格子上的点击有自己的处理，先挡掉）。 */
@@ -729,6 +736,15 @@ const menuItems = computed<MenuItem[]>(() => {
   }
   // 重命名在文件树里是行内输入框，这里是列表 / 网格、没有「正在编辑的那一行」可用，
   // 所以走弹窗。少了这一条的话，标签页模式下用户根本改不了文件名。
+  // 双击之外的备选入口：触屏 / 键盘用户不双击也能打开。
+  items.push({
+    label: t('common.open'),
+    run: () => {
+      hideMenu()
+      if (menu.dir) go(path)
+      else void workspace.openFile(props.project, path)
+    },
+  })
   items.push({ label: t('common.rename'), run: () => void rename() })
   items.push({ label: t('tree.copy'), run: () => copySelection(false) })
   items.push({ label: t('tree.cut'), run: () => copySelection(true) })
@@ -737,8 +753,6 @@ const menuItems = computed<MenuItem[]>(() => {
     danger: true,
     run: () => void remove(),
   })
-  // 目录是后端现打的 zip（`zip: true` 挂一条「正在打包」的提示），文件是直传
-  items.push({ label: t('common.download'), run: () => void download(path, { zip: menu.dir }) })
   if (!menu.dir && isArchive(name)) {
     items.push({ label: t('tree.extract'), run: () => void extract() })
   }

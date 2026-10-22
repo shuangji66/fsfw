@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"fsfw/internal/fsx"
 )
 
 type fnpackInfo struct {
@@ -101,4 +104,35 @@ func (s *Server) handleSystemReveal(w http.ResponseWriter, r *http.Request) erro
 	}
 	s.log.Infof("在文件管理器中打开 %s", p)
 	return writeJSON(w, map[string]any{"ok": true})
+}
+
+// handleSystemSaveFile 把一段字节写到系统保存对话框选定的路径。
+//
+// 图标导出用：PNG 是在 WebView 里用 canvas 生成的，没有后端路径可复制，只能把
+// 内容传回来。JSON 里的 []byte 走 base64，请求体上限沿用全局的 32MB（图标远小于
+// 这个数）。写文件本身走 saveToPath（临时文件 + rename），失败不会留下半截文件。
+func (s *Server) handleSystemSaveFile(w http.ResponseWriter, r *http.Request) error {
+	if err := requireMethods(r, http.MethodPost); err != nil {
+		return err
+	}
+	var req struct {
+		Path string `json:"path"`
+		Data []byte `json:"data"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	if len(req.Data) == 0 {
+		return badRequest("没有要保存的内容")
+	}
+	path, err := cleanSavePath(req.Path)
+	if err != nil {
+		return err
+	}
+	n, err := saveToPath(path, bytes.NewReader(req.Data))
+	if err != nil {
+		return saveError(path, err)
+	}
+	s.log.Infof("保存文件 %s（%s）", path, fsx.HumanSize(n))
+	return writeJSON(w, map[string]any{"ok": true, "path": path, "size": n})
 }

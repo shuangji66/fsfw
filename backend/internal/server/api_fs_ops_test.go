@@ -247,3 +247,94 @@ func TestQueryRelRejectsTraversal(t *testing.T) {
 		}
 	}
 }
+
+// 导出到本机：目录按 package 白名单打成 zip，直接写到保存对话框给的路径。
+func TestFsExportWritesZip(t *testing.T) {
+	s, dataDir := newTestServer(t)
+	proj := seedProject(t, dataDir)
+	if err := os.MkdirAll(filepath.Join(proj, "app", "server"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for rel, body := range map[string]string{
+		"app/server/main": "bin",
+		"README.md":       "not part of the package",
+		"building/arm/x":  "not part of the package",
+	} {
+		p := filepath.Join(proj, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	out := filepath.Join(t.TempDir(), "demo.zip")
+	code, body := doJSON(t, s, "/api/fs/export", map[string]any{
+		"path":     "demo",
+		"savePath": out,
+		"layout":   "package",
+	})
+	if code != http.StatusOK {
+		t.Fatalf("状态码 = %d（%v），期望 200", code, body)
+	}
+	if got := body["path"]; got != out {
+		t.Errorf("返回路径 = %v，期望 %q", got, out)
+	}
+
+	zr, err := zip.OpenReader(out)
+	if err != nil {
+		t.Fatalf("导出的不是合法 zip: %v", err)
+	}
+	defer zr.Close()
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	for _, want := range []string{"demo/manifest", "demo/app/server/main"} {
+		if !names[want] {
+			t.Errorf("包里缺少 %q（实际 %v）", want, names)
+		}
+	}
+	for _, gone := range []string{"demo/README.md", "demo/building/arm/x"} {
+		if names[gone] {
+			t.Errorf("package 布局不该包含 %q", gone)
+		}
+	}
+
+	// 覆盖同一个目标（保存对话框确认过覆盖）必须成功，不能因为 rename 残留失败。
+	if code, body := doJSON(t, s, "/api/fs/export", map[string]any{
+		"path": "demo", "savePath": out, "layout": "package",
+	}); code != http.StatusOK {
+		t.Fatalf("覆盖导出：状态码 = %d（%v），期望 200", code, body)
+	}
+}
+
+func TestFsExportValidation(t *testing.T) {
+	s, dataDir := newTestServer(t)
+	seedProject(t, dataDir)
+	out := filepath.Join(t.TempDir(), "demo.zip")
+
+	cases := []struct {
+		name string
+		body map[string]any
+		want int
+	}{
+		{"路径越界", map[string]any{"path": "../x", "savePath": out}, http.StatusBadRequest},
+		{"保存路径是相对路径", map[string]any{"path": "demo", "savePath": "demo.zip"}, http.StatusBadRequest},
+		{"保存目录不存在", map[string]any{"path": "demo", "savePath": filepath.Join(t.TempDir(), "no", "x.zip")}, http.StatusBadRequest},
+		{"不支持的 layout", map[string]any{"path": "demo", "savePath": out, "layout": "full"}, http.StatusBadRequest},
+		{"项目不存在", map[string]any{"path": "nope", "savePath": out}, http.StatusNotFound},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if code, body := doJSON(t, s, "/api/fs/export", tc.body); code != tc.want {
+				t.Errorf("状态码 = %d（%v），期望 %d", code, body, tc.want)
+			}
+		})
+	}
+
+	if rec := serve(s, http.MethodGet, "/api/fs/export", nil); rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET 状态码 = %d，期望 405", rec.Code)
+	}
+}

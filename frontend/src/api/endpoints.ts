@@ -9,6 +9,7 @@ import type {
   PackSettings,
   ProjectExists,
   ProjectInfo,
+  SaveResult,
   SettingsInfo,
   SystemInfo,
 } from './types'
@@ -31,10 +32,6 @@ export const getAppSettings = () => request<SettingsInfo>('/api/settings')
  */
 export const saveAppSettings = (patch: { projectRoot?: string; outputDir?: string }) =>
   request<SettingsInfo>('/api/settings', { method: 'PUT', json: patch })
-
-/** 导入本机某个绝对路径上的 fpk（原生文件选择器选出来的）。 */
-export const importProjectByPath = (path: string) =>
-  request<{ ok: boolean; project: ProjectInfo }>('/api/projects/import-path', { json: { path } })
 
 // ---- 项目 ----
 
@@ -181,6 +178,25 @@ export const downloadEntry = (path: string, opts: { package?: boolean } = {}) =>
     path,
     layout: opts.package ? 'package' : undefined,
   })
+
+/**
+ * 把项目目录按 package 白名单导出到本机路径（系统保存对话框选出来的）。
+ *
+ * 和 `downloadEntry` 的区别只在落点：这里由后端直接写文件，不经过 WebView 的
+ * 下载通道，所以一定会出现系统的「另存为」，也不会在浏览器下载列表里留记录。
+ */
+export const exportProjectZip = (path: string, savePath: string) =>
+  request<SaveResult>('/api/fs/export', {
+    json: { path, savePath, layout: 'package' },
+  })
+
+/**
+ * 把一段字节写到本机路径（系统保存对话框选出来的）。
+ *
+ * `data` 是 base64：图标是 WebView 里 canvas 生成的，没有可复制的后端路径。
+ */
+export const saveFileBytes = (path: string, data: string) =>
+  request<SaveResult>('/api/system/save-file', { json: { path, data } })
 
 // ---- 日志 ----
 

@@ -130,7 +130,7 @@
                 {{ item.name }}
               </span>
               <!--
-                大小 / 时间 / 目录 / 下载是一组：窄屏放不下时整组下移一行、右对齐
+                大小 / 时间 / 目录 / 删除是一组：窄屏放不下时整组下移一行、右对齐
                 （ml-auto 只在它单独占一行时起作用——同一行时剩余空间被名字的 flex-1
                 吃掉了，auto margin 分不到东西）。
               -->
@@ -145,13 +145,6 @@
                     :disabled="!item.path"
                     :title="t('pack.openFolder')"
                     @click="openFolder(item)"
-                  />
-                  <el-button
-                    text
-                    size="small"
-                    :icon="Download"
-                    :title="t('common.download')"
-                    @click="download(getDownloadPath(item))"
                   />
                   <el-button
                     text
@@ -228,10 +221,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Box, Delete, Download, EditPen, FolderOpened, Refresh } from '@element-plus/icons-vue'
+import { Box, Delete, EditPen, FolderOpened, Refresh } from '@element-plus/icons-vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { deleteArtifact, readFile } from '@/api/endpoints'
-import { useDownload } from './useDownload'
 import type { Artifact } from '@/api/types'
 import { humanSize } from '@/utils/format'
 import { Manifest } from '@/utils/manifest'
@@ -241,7 +233,6 @@ const props = defineProps<{ project: string }>()
 
 const { t } = useI18n()
 const workspace = useWorkspaceStore()
-const { download } = useDownload()
 
 const state = computed(() => workspace.state(props.project))
 const multi = ref(state.value.settings.multiPlatform)
@@ -318,19 +309,6 @@ watch(manifestBaseline, () => {
 
 /** 多架构发布至少要有这两个架构目录，勾上开关时缺哪个补哪个。 */
 const DEFAULT_ARCHES = ['arm', 'x86']
-
-/**
- * 产物下载地址。
- *
- * `/api/fs/download` 的 `path` 是**相对项目根**的（不能带前导 `/`），而 `Artifact.path`
- * 是绝对路径（后端 `root.Abs` 给的，供「打开所在目录」用）。两个 scope 的文件名相同，
- * 而且打包时一定先在项目目录里落地一份，所以一律用项目内的相对路径——以前 project
- * 那一支直接把 `item.path` 递过去，后端会去找 `projects/vol1/...` 这个不存在的路径，
- * 表现是「列表里项目内那条产物的下载按钮点了报目标不存在」。
- */
-function getDownloadPath(item: Artifact): string {
-  return `${props.project}/${item.name}`
-}
 
 /**
  * 在资源管理器里打开产物所在的目录。

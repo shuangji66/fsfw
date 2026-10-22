@@ -19,9 +19,9 @@ Windows 10 / 11 上浏览、编辑、打包 fnOS 的 fpk 项目，产出标准 `
 
 ## 功能
 
-- 项目管理：新建（docker / 桌面 UI）、导入 `.fpk`、从本机路径导入、删除、最近修改排序。
+- 项目管理：新建（docker / 桌面 UI）、导入 `.fpk`（拖放或选择文件）、删除、最近修改排序。
 - 文件工作区：文件树 / 标签页、文本编辑器（CodeMirror）、manifest / resource / ui
-  config / wizard / 环境变量等表单编辑、上传下载、解压、图标制作。
+  config / wizard / 环境变量等表单编辑、上传、解压、图标制作。
 - 打包：随包分发官方 `fnpack.exe`（与 `fsfw.exe` 同目录），支持多架构分别出包、
   把产物复制到导出目录、产物列表与删除。
 - 设置：项目目录 / 导出目录可改（默认都在 `Documents\fpkstudio` 下），中英文、深浅色；

@@ -4,7 +4,6 @@ import {
   createProject,
   deleteProject,
   importProject,
-  importProjectByPath,
   listProjects,
 } from '@/api/endpoints'
 import { removePin, renamePin, sortPinned, togglePin } from '@/utils/pins'
@@ -122,18 +121,6 @@ export const useProjectsStore = defineStore('projects', () => {
     return res.project
   }
 
-  /**
-   * 导入本机绝对路径上的 fpk（桌面外壳的原生文件选择器选的）。
-   *
-   * 文件内容由后端直接读——浏览器拿不到 `C:\...` 这种路径，选择器只负责
-   * 给出路径。
-   */
-  async function importFpkPath(path: string) {
-    const res = await importProjectByPath(path)
-    await refresh()
-    return res.project
-  }
-
   function find(name: string): ProjectInfo | undefined {
     return list.value.find((p) => p.name === name)
   }
@@ -153,7 +140,6 @@ export const useProjectsStore = defineStore('projects', () => {
     create,
     remove,
     importFpk,
-    importFpkPath,
     find,
   }
 })

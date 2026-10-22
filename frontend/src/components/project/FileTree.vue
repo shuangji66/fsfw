@@ -236,7 +236,6 @@ import {
   Switch,
 } from '@element-plus/icons-vue'
 import { useUpload } from './useUpload'
-import { useDownload } from './useDownload'
 import { useOpenFolder } from './useOpenFolder'
 import { useTabsStore } from '@/stores/tabs'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -252,7 +251,6 @@ const { t } = useI18n()
 const workspace = useWorkspaceStore()
 const tabs = useTabsStore()
 const { upload, cancel: cancelUpload, busy: uploading, percent: uploadPercent } = useUpload()
-const { download } = useDownload()
 const { canOpenFolder, openFolder } = useOpenFolder(() => props.project)
 const { copy: copyPaths, paste: pasteAt, undo } = useFileClipboard(() => props.project)
 
@@ -663,8 +661,6 @@ const menuItems = computed<MenuItem[]>(() => {
   items.push({ label: t('common.rename'), run: () => startRename(path) })
   items.push({ label: t('tree.copy'), run: () => copySelection(false) })
   items.push({ label: t('tree.cut'), run: () => copySelection(true) })
-  // 目录是后端现打的 zip（`zip: true` 挂一条「正在打包」的提示），文件是直传
-  items.push({ label: t('common.download'), run: () => void download(path, { zip: menu.dir }) })
   if (!menu.dir && isArchive(name)) {
     items.push({ label: t('tree.extract'), run: () => void extract(path) })
   }

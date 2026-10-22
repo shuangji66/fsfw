@@ -26,21 +26,6 @@
         >
           {{ t('home.import.pick') }}
         </el-button>
-        <!--
-          走系统的文件选择器：返回的是本机绝对路径，交给后端按路径导入，
-          不经过请求体上传。普通浏览器里没有原生选择器，按钮禁用。
-        -->
-        <el-button
-          size="default"
-          type="primary"
-          plain
-          :icon="FolderOpened"
-          :disabled="loading || !hostAvailable"
-          :title="hostAvailable ? '' : t('host.unavailable')"
-          @click.stop="pickLocalFile"
-        >
-          {{ t('home.import.pickPath') }}
-        </el-button>
       </div>
       <input ref="input" type="file" accept=".fpk,.tar,.tgz,application/gzip" class="hidden" @change="onPick" />
     </div>
@@ -56,7 +41,7 @@
         :stroke-width="6"
         :format="() => t('home.import.uploading', { percent })"
       />
-      <!-- 只有「浏览器上传」这一路能取消：原生选择器那条是后端读本机文件，没有请求体可断 -->
+      <!-- 上传是请求体，客户端断开时后端会把写了一半的文件删掉 -->
       <el-button v-if="cancelable" size="default" @click="cancelUpload">
         {{ t('common.cancel') }}
       </el-button>
@@ -68,9 +53,8 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
-import { FolderOpened, UploadFilled } from '@element-plus/icons-vue'
+import { UploadFilled } from '@element-plus/icons-vue'
 import { useProjectsStore } from '@/stores/projects'
-import { hostErrorMessage, isDesktopHost, pickUserFiles } from '@/host'
 import type { ProjectInfo } from '@/api/types'
 
 const emit = defineEmits<{
@@ -90,8 +74,6 @@ let controller: AbortController | null = null
 /** 正在上传、且这一路支持取消。 */
 const cancelable = computed(() => loading.value && controller !== null)
 
-const hostAvailable = computed(() => isDesktopHost())
-
 function pick() {
   if (!loading.value) input.value?.click()
 }
@@ -106,31 +88,6 @@ async function onDrop(event: DragEvent) {
   dragging.value = false
   const file = event.dataTransfer?.files?.[0]
   if (file) await upload(file)
-}
-
-/**
- * 「从本机路径导入」：拉起系统文件选择器 → 由后端按绝对路径导入。
- *
- * 选择器返回最多一个路径；空数组表示用户没选就关掉了，提示一句取消，
- * 不按错误处理。普通浏览器里没有原生选择器，按钮本来就是禁用的。
- */
-async function pickLocalFile() {
-  if (loading.value) return
-  loading.value = true
-  try {
-    const paths = await pickUserFiles(t('home.import.pickerTitle'), ['.fpk', '.tar', '.tgz'])
-    const path = paths[0]
-    if (!path) {
-      ElMessage.info(t('home.import.canceled'))
-      return
-    }
-    const info = await projects.importFpkPath(path)
-    emit('done', info)
-  } catch (e) {
-    ElMessage.error(hostErrorMessage(e))
-  } finally {
-    loading.value = false
-  }
 }
 
 async function upload(file: File) {

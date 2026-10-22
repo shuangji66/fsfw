@@ -50,12 +50,12 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument, Delete, Download, EditPen, FolderOpened, MoreFilled, Top } from '@element-plus/icons-vue'
-import { copyEntry, projectExists, readFile, renameEntry, writeFile } from '@/api/endpoints'
+import { copyEntry, exportProjectZip, projectExists, readFile, renameEntry, writeFile } from '@/api/endpoints'
 import { useProjectsStore } from '@/stores/projects'
 import { useTabsStore } from '@/stores/tabs'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useDownload } from '@/components/project/useDownload'
-import { hostErrorMessage, openInFileManager } from '@/host'
+import { hostErrorMessage, isDesktopHost, openInFileManager, pickSavePath } from '@/host'
 import { rewriteForDuplicate } from '@/utils/duplicate'
 import type { ProjectInfo } from '@/api/types'
 
@@ -116,22 +116,54 @@ function run(command: string) {
   if (command === 'pin') projects.togglePin(props.item.name)
   else if (command === 'rename') void rename()
   else if (command === 'duplicate') void duplicate()
-  else if (command === 'export') exportProject()
+  else if (command === 'export') void exportProject()
   else if (command === 'delete') void remove()
 }
 
 /**
- * 导出：把项目目录打成 zip 交给浏览器下载（后端对目录就是这么处理的，包内带顶层目录）。
+ * 导出：把项目目录打成 zip。
  *
- * 走后端现压缩这条路，所以挂 `zip: true`：稍大的项目能压好几秒，得先告诉用户「在动」，
- * 否则看起来像没点中（见 `useDownload`）。
+ * 桌面外壳里先弹系统的「另存为」，再让后端把 zip 直接写到选定的路径——不再经过
+ * WebView 的下载通道（那条路在 WebView2 里不保证弹出保存框）。普通浏览器开发没有
+ * 原生对话框，回落到原来的下载。
  *
- * `package: true` 按 fpk 包的白名单导出（`layout=package`）：只留 manifest、图标和
+ * 两种落点都按 fpk 包的白名单导出（`layout=package`）：只留 manifest、图标和
  * app / cmd / config / wizard / i18n 这些包内容，`building/`（各架构产物）、`.git`、
  * README 之类都不进 zip——和 fnpack 真正打进 fpk 的那批文件保持一致。
+ *
+ * 打包由后端现做，稍大的项目能压好几秒，所以挂一条不自动消失的提示。
  */
-function exportProject() {
-  void download(props.item.name, { zip: true, package: true })
+async function exportProject() {
+  const name = props.item.name
+  if (!isDesktopHost()) {
+    void download(name, { zip: true, package: true })
+    return
+  }
+
+  let savePath: string | null
+  try {
+    savePath = await pickSavePath({
+      defaultPath: `${name}.zip`,
+      title: t('home.exportTitle'),
+      accept: ['zip'],
+    })
+  } catch (e) {
+    ElMessage.error(hostErrorMessage(e))
+    return
+  }
+  if (!savePath) return
+
+  const tip = ElMessage({ message: t('home.exportPacking'), duration: 0 })
+  try {
+    await exportProjectZip(name, savePath)
+    ElMessage.success(t('home.exportSaved', { path: savePath }))
+  } catch (e) {
+    ElMessage.error(
+      t('home.exportFailed', { error: e instanceof Error ? e.message : String(e) }),
+    )
+  } finally {
+    tip.close()
+  }
 }
 
 async function rename() {

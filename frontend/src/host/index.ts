@@ -76,9 +76,37 @@ export function pickUserDirectory(title: string): Promise<string[]> {
   return pick({ directory: true, title })
 }
 
-/** 选一个文件；`accept` 限定扩展名（如 `['.fpk', '.tar', '.tgz']`）。 */
-export function pickUserFiles(title: string, accept: string[]): Promise<string[]> {
-  return pick({ directory: false, title, accept })
+interface SaveOptions {
+  /** 保存对话框里预填的文件名（含扩展名）。 */
+  defaultPath: string
+  title: string
+  /** 文件扩展名白名单（带不带前导点都行）。 */
+  accept?: string[]
+}
+
+/**
+ * 拉起系统的「另存为」对话框，返回用户选定的绝对路径；取消时返回 `null`。
+ *
+ * 只负责选路径，真正写文件由后端做（`/api/fs/export`、`/api/system/save-file`）：
+ * 项目导出可能是几百 MB 的 zip，走 WebView 的 fs 插件要先整份读进 JS 内存；交给
+ * 后端流式写既不占内存，也复用了「临时文件 + rename」的原子落盘。
+ */
+export async function pickSavePath(options: SaveOptions): Promise<string | null> {
+  if (!isDesktopHost()) throw new HostUnavailableError()
+
+  const { save } = await import('@tauri-apps/plugin-dialog')
+  return save({
+    defaultPath: options.defaultPath,
+    title: options.title,
+    filters: options.accept?.length
+      ? [
+          {
+            name: i18n.global.t('host.fileFilter'),
+            extensions: options.accept.map((ext) => ext.replace(/^\./, '')),
+          },
+        ]
+      : undefined,
+  })
 }
 
 /** 把宿主 / 接口错误翻成给用户看的一句话。 */
