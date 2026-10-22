@@ -205,8 +205,11 @@ docs/porting-contract.md  前后端接口契约
 - 托盘图标不见了：Windows 把新图标收进了「隐藏的图标」，在任务栏设置里固定一下。
 - 安装时提示需要 WebView2 且下载失败：手动安装 Evergreen Runtime，或改
   `src-tauri/tauri.conf.json` 的 `webviewInstallMode` 为 `offlineInstaller` 重新打包。
-- 杀毒软件拦截：MSI 未签名。正式分发请配置 `bundle.windows.certificateThumbprint` /
-  `signCommand`。
+- 杀毒软件拦截（尤其是 `fnpack.exe` 被隔离）：MSI 和随包 exe 默认未签名，Defender
+  的启发式容易误报。处理顺序是：核对 SHA-256 → 给 `fnpack.exe` / `fsfw-backend.exe` /
+  `fsfw.exe` / MSI 全部做 Authenticode 签名 → 向微软等厂商提交误报。完整步骤、提交模板
+  和「精简 MSI（不带 fnpack）」的兜底方案见 [docs/antivirus.md](docs/antivirus.md)。
+  **不要**让安装程序自动添加杀软排除项，也不要用改文件名/加壳的方式绕过扫描。
 
 ## 许可
 

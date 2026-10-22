@@ -21,6 +21,10 @@ if (-not $Version) {
 
 $target = "x86_64-pc-windows-msvc"
 $binDir = Join-Path $root "src-tauri\binaries"
+# vendor/fnpack.exe is a third-party binary bundled with the installer. Pin its hash so
+# a replaced/infected copy on the build machine cannot end up in the MSI. Update this
+# constant and vendor/README.md together when upgrading fnpack.
+$expectedFnpackSha256 = "D7AF4BD716B009C58F5BCD931615F39DB121E7D4B75DC759E575C4FB2879B6EE"
 $backendOut = Join-Path $binDir "fsfw-backend-$target.exe"
 $fnpackSrc = Join-Path $root "vendor\fnpack.exe"
 $fnpackOut = Join-Path $binDir "fnpack-$target.exe"
@@ -66,8 +70,23 @@ finally {
 Assert-PeAmd64 $backendOut "backend"
 
 Write-Host "==> staging vendor fnpack.exe"
+if (-not (Test-Path $fnpackSrc)) { throw "vendor fnpack.exe not found: $fnpackSrc" }
+$actualFnpackSha256 = (Get-FileHash -Algorithm SHA256 -Path $fnpackSrc).Hash
+if ($actualFnpackSha256 -ne $expectedFnpackSha256) {
+    throw ("vendor/fnpack.exe SHA-256 mismatch: expected {0}, got {1}" -f $expectedFnpackSha256, $actualFnpackSha256)
+}
 Copy-Item -Force $fnpackSrc $fnpackOut
 Assert-PeAmd64 $fnpackOut "fnpack"
+
+# Optional Authenticode signing of the backend and fnpack before Tauri bundles them.
+# Certificate comes from the environment:
+#   FSFW_SIGN_CERT_SHA1                     thumbprint in the current user's store
+#   FSFW_SIGN_PFX / FSFW_SIGN_PFX_PASSWORD  PFX file and password
+if ($env:FSFW_SIGN_CERT_SHA1 -or $env:FSFW_SIGN_PFX) {
+    $signScript = Join-Path $PSScriptRoot "sign.ps1"
+    & $signScript -Path @($backendOut, $fnpackOut)
+    if ($LASTEXITCODE -ne 0) { throw "signing backend/fnpack failed (exit code $LASTEXITCODE)" }
+}
 
 $backendSize = [math]::Round((Get-Item $backendOut).Length / 1MB, 1)
 $fnpackSize = [math]::Round((Get-Item $fnpackOut).Length / 1MB, 1)

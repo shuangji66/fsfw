@@ -10,7 +10,8 @@
     "build:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-backend.ps1",
     "test:backend": "cd backend && go test ./...",
     "typecheck": "npm --prefix frontend run typecheck",
-    "check": "npm --prefix frontend run check"
+    "check": "npm --prefix frontend run check",
+    "build:slim": "npm run build:backend && tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.slim.conf.json"
   },
   "devDependencies": {
     "@tauri-apps/cli": "2.12.4"
