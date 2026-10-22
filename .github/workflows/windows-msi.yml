@@ -84,9 +84,14 @@ jobs:
           if (-not (Test-Path $exe)) { throw "安装目录里没有 fsfw.exe：$exe" }
           if (-not (Test-Path $backend)) { throw "安装目录里没有 fsfw-backend.exe：$backend" }
 
+          # 造一份用户数据，验证 CLEANDOCS=1 会把它整目录删掉（不弹询问）。
+          $docs = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "fpkstudio"
+          New-Item -ItemType Directory -Force -Path $docs | Out-Null
+          Set-Content -Path (Join-Path $docs "keep.txt") -Value "keep"
+
           $uninstallLog = Join-Path $env:RUNNER_TEMP "uninstall.log"
           $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @(
-            "/x", "`"$($msi.FullName)`"", "/qn", "/norestart", "CLEANDOCS=0",
+            "/x", "`"$($msi.FullName)`"", "/qn", "/norestart", "CLEANDOCS=1",
             "/l*v", "`"$uninstallLog`""
           )
           if ($p.ExitCode -ne 0) {
@@ -94,6 +99,7 @@ jobs:
             throw "卸载失败，msiexec 退出码 $($p.ExitCode)"
           }
           if (Test-Path $exe) { throw "卸载后 fsfw.exe 仍在：$exe" }
+          if (Test-Path $docs) { throw "CLEANDOCS=1 没有删除用户数据：$docs" }
 
       - name: Upload MSI
         uses: actions/upload-artifact@v4
