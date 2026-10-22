@@ -1,0 +1,9 @@
+# Keep text files LF on every platform; Windows checkout with autocrlf can otherwise
+# turn Cargo.lock/Cargo.toml into CRLF and break version-injection regexes.
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.icns binary
+*.exe binary
+*.msi binary

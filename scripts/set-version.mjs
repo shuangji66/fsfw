@@ -29,7 +29,8 @@ if (major > 255 || minor > 255 || patch > 65535) {
 }
 
 function read(rel) {
-  return fs.readFileSync(path.join(root, rel), 'utf8')
+  // Windows checkout 可能把文本文件转成 CRLF；统一成 LF 再处理，避免正则漏匹配。
+  return fs.readFileSync(path.join(root, rel), 'utf8').replace(/\r\n/g, '\n')
 }
 
 function write(rel, text) {
@@ -51,12 +52,14 @@ write(cargoPath, cargo.replace(/^version = "[^"]+"/m, `version = "${version}"`))
 
 const lockPath = 'src-tauri/Cargo.lock'
 const lock = read(lockPath)
-const lockRe = /(\[\[package\]\]\nname = "fsfw"\nversion = ")[^"]+(")/
-if (!lockRe.test(lock)) {
-  console.error('Cargo.lock 里没有找到 fsfw 的版本号')
-  process.exit(1)
+const lockRe = /(\[\[package\]\]\r?\nname = "fsfw"\r?\nversion = ")[^"]+(")/
+if (lockRe.test(lock)) {
+  write(lockPath, lock.replace(lockRe, `$1${version}$2`))
 }
-write(lockPath, lock.replace(lockRe, `$1${version}$2`))
+else {
+  // 锁文件不是构建的输入（cargo 会自己同步）；格式认不出来时只提示，不阻断发版。
+  console.warn('Cargo.lock 里没有找到 fsfw 的版本号，跳过（cargo build 会自动更新）')
+}
 
 console.log(`version -> ${version}`)
 console.log(`  ${tauriPath}`)
