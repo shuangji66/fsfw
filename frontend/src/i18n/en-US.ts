@@ -607,12 +607,6 @@ export default {
       en: 'English',
       system: 'Auto',
     },
-    layout: {
-      title: 'Layout',
-      auto: 'Auto',
-      desktop: 'Desktop',
-      mobile: 'Mobile',
-    },
     dirs: {
       title: 'Directories',
       projectRoot: {

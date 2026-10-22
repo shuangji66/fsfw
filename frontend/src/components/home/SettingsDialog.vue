@@ -4,7 +4,7 @@
     :title="t('settings.title')"
     class="app-dialog app-dialog-auto"
     modal-class="app-modal"
-    :width="layout.isMobile ? '95%' : '640px'"
+    width="640px"
     align-center
     lock-scroll
     append-to-body
@@ -12,11 +12,10 @@
   >
     <div class="flex flex-col gap-5">
       <!--
-        主题 / 语言 / 界面形态：三项并排一行，各自「标题一行、一个按钮一行」。
-        每项只有一个循环按钮——点一下切到下一个值，按钮上写当前值；三档的全部
-        取值循环，不再排三个按钮（三行各三格太占地方，也容易看成三组独立开关）。
+        主题 / 语言：两项并排一行，各自「标题一行、一个按钮一行」。
+        每项只有一个循环按钮——点一下切到下一个值，按钮上写当前值。
       -->
-      <div class="grid grid-cols-3 gap-3">
+      <div class="grid grid-cols-2 gap-3">
         <section class="min-w-0">
           <p class="mb-2 truncate text-sm font-medium text-slate-500 dark:text-slate-400">
             {{ t('settings.theme.title') }}
@@ -32,15 +31,6 @@
           </p>
           <el-button size="default" class="w-full" @click="cycleLocale">
             {{ t(localeLabelKey) }}
-          </el-button>
-        </section>
-
-        <section class="min-w-0">
-          <p class="mb-2 truncate text-sm font-medium text-slate-500 dark:text-slate-400">
-            {{ t('settings.layout.title') }}
-          </p>
-          <el-button size="default" class="w-full" @click="cycleLayout">
-            {{ t(`settings.layout.${layout.mode}`) }}
           </el-button>
         </section>
       </div>
@@ -131,7 +121,6 @@ import {
 import { useThemeStore, type ThemeMode } from '@/stores/theme'
 import { useLocaleStore } from '@/stores/locale'
 import type { LocaleMode } from '@/i18n'
-import { useLayoutStore, type LayoutMode } from '@/stores/layout'
 
 type Slot = 'projectRoot' | 'outputDir'
 
@@ -144,13 +133,6 @@ const LOCALE_MODES: { value: LocaleMode; labelKey: string }[] = [
   { value: 'en-US', labelKey: 'settings.locale.en' },
   { value: 'system', labelKey: 'settings.locale.system' },
 ]
-
-/**
- * 界面形态的循环顺序（文案走 i18n 的 `settings.layout.<mode>`）。
- *
- * 「自动」放最后：和主题、语言那两档一致（具体值在前，跟随 / 自动那类兜底项在后）。
- */
-const LAYOUT_MODES: LayoutMode[] = ['desktop', 'mobile', 'auto']
 
 /** 仓库地址：关于一节里的图标链到这里。 */
 const REPO_URL = 'https://github.com/shuangji66/fpkstudio'
@@ -171,7 +153,6 @@ const emit = defineEmits<{ saved: [] }>()
 const { t } = useI18n()
 const theme = useThemeStore()
 const language = useLocaleStore()
-const layout = useLayoutStore()
 
 const info = ref<SettingsInfo | null>(null)
 const busy = ref(false)
@@ -218,10 +199,6 @@ function cycleLocale() {
   const index = LOCALE_MODES.findIndex((item) => item.value === language.mode)
   const next = LOCALE_MODES[(index + 1) % LOCALE_MODES.length]!
   language.setMode(next.value)
-}
-
-function cycleLayout() {
-  layout.setMode(nextOf(LAYOUT_MODES, layout.mode))
 }
 
 async function onOpen() {

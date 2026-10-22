@@ -599,12 +599,6 @@ export default {
       en: 'English',
       system: '自动',
     },
-    layout: {
-      title: '界面',
-      auto: '自动',
-      desktop: '桌面',
-      mobile: '移动',
-    },
     dirs: {
       title: '目录设置',
       projectRoot: {

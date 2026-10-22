@@ -26,7 +26,7 @@
  * `el-select` 的 `collapse-tags` 是按**个数**折叠的（`max-collapse-tags`，默认 1），
  * 根本不看容器有多宽——一个 600px 宽、四个短标签的输入框也会显示成「第 1 个 +3」。
  * 所以这里每轮排版都量一次标签的真实宽度，用 `fitTagCount` 算出放得下几个再交给
- * `el-select`。宽度变化靠 ResizeObserver 跟（桌面 / 移动布局会换宽度，编辑器的标签页
+ * `el-select`。宽度变化靠 ResizeObserver 跟（窗口或容器宽度变化，编辑器的标签页
  * 也可能一直是 v-show 藏着的）。
  *
  * 两个刻意的选择：
