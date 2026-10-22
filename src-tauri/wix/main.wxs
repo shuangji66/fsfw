@@ -153,8 +153,9 @@
                 <RegistryKey Root="HKCU" Key="Software\\{{manufacturer}}\\{{product_name}}">
                     <RegistryValue Name="InstallDir" Type="string" Value="[INSTALLDIR]" KeyPath="yes" />
                 </RegistryKey>
-                <!-- 安装目录本身必须在卸载时移除；放在这个永远安装的组件里，
-                     不依赖用户是否勾选快捷方式。 -->
+                <!-- The install directory itself must be removed on uninstall. Keep
+                     it in this always-installed component so it does not depend on
+                     the optional shortcuts feature. -->
                 <RemoveFolder Id="INSTALLDIR" On="uninstall" />
                 <!-- Change the Root to HKCU for perUser installations -->
                 {{#each deep_link_protocols as |protocol| ~}}
@@ -255,8 +256,9 @@
                 Absent="disallow">
 
             <ComponentRef Id="RegistryEntries"/>
-            <!-- 主程序和 Go 后端属于「必须有」的组件：不能挂在一个可以取消勾选的
-                 子 feature 里，否则用户取消 Shortcuts / PATH 之后应用直接起不来。 -->
+            <!-- The main executable and the Go backend are mandatory: they must not
+                 live in an optional child feature, otherwise deselecting shortcuts
+                 would leave the app unable to start. -->
             <ComponentRef Id="Path"/>
             {{#each binaries as |bin| ~}}
             <ComponentRef Id="{{ bin.id }}"/>
