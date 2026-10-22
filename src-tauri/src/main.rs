@@ -10,6 +10,11 @@
 // 数据目录固定在 <Documents>\fpkstudio，后端负责在里面创建 projects / output / logs / run。
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// 只产出 amd64 安装包：x64 的 fnpack.exe 和 WebView2 组合已经验证过，ARM64 需要
+// 单独准备 fnpack 并重新跑一遍安装/卸载验证。这里让交叉编译直接失败，避免误出包。
+#[cfg(not(target_arch = "x86_64"))]
+compile_error!("FSFW (fpkstudio for Windows) only supports the amd64 target");
+
 mod backend;
 mod dialogs;
 mod uninstall;

@@ -128,6 +128,28 @@ pub fn start(data_dir: &Path, version: &str) -> Result<Started, String> {
         .stderr(Stdio::from(stderr));
     hide_console(&mut command);
 
+    // 安装目录里与 fsfw.exe 并排的 fnpack.exe。用户显式设置了 FSFW_FNPACK 时以用户为准，
+    // 否则一律用随包分发的这一份，不再依赖 PATH。
+    let user_fnpack = std::env::var_os("FSFW_FNPACK")
+        .map(|value| !value.to_string_lossy().trim().is_empty())
+        .unwrap_or(false);
+    match locate_binary("fnpack") {
+        Some(path) if !user_fnpack => {
+            append_log(data_dir, &format!("使用随包 fnpack：{}", path.display()));
+            command.env("FSFW_FNPACK", &path);
+        }
+        Some(path) => {
+            append_log(
+                data_dir,
+                &format!(
+                    "检测到随包 fnpack {}，但环境变量 FSFW_FNPACK 已设置，沿用用户指定的版本",
+                    path.display()
+                ),
+            );
+        }
+        None => append_log(data_dir, "没有在安装目录找到 fnpack.exe，回落到 PATH 查找"),
+    }
+
     let mut child = command
         .spawn()
         .map_err(|err| format!("启动后端 {} 失败：{err}", backend.display()))?;
@@ -235,32 +257,34 @@ pub fn reveal(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// 找后端可执行文件：安装目录里通常叫 fsfw-backend.exe；
-/// 开发构建（target/debug）里可能还带着 target triple 后缀。
-fn locate_backend() -> Option<PathBuf> {
+/// 找安装目录里与 fsfw.exe 并排的可执行文件。
+///
+/// 安装包里叫 `fsfw-backend.exe` / `fnpack.exe`；开发构建（target/debug）里可能
+/// 还带着 target triple 后缀，所以先试精确名字，再按前缀兜底扫描。
+fn locate_binary(stem: &str) -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
 
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    let names = [
-        "fsfw-backend.exe".to_string(),
-        "fsfw-backend".to_string(),
-        format!("fsfw-backend-{}.exe", target_triple()),
+    let mut candidates: Vec<PathBuf> = vec![
+        dir.join(format!("{stem}.exe")),
+        dir.join(stem),
+        dir.join(format!("{stem}-{}.exe", target_triple())),
     ];
-    for name in &names {
-        candidates.push(dir.join(name));
-    }
 
     if let Ok(entries) = fs::read_dir(dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with("fsfw-backend") && !name.ends_with(".log") {
+            if name.starts_with(stem) && !name.ends_with(".log") {
                 candidates.push(entry.path());
             }
         }
     }
 
     candidates.into_iter().find(|path| path.is_file())
+}
+
+fn locate_backend() -> Option<PathBuf> {
+    locate_binary("fsfw-backend")
 }
 
 fn target_triple() -> String {

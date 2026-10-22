@@ -23,7 +23,7 @@ npm run build                    # 后端 → 前端 → tauri build（MSI）
 npm run dev                      # 后端 → tauri dev
 npm run typecheck                # vue-tsc
 npm run check                    # 前端 10 个检查脚本
-npm run test:backend             # cd backend && go test ./...
+npm run test:backend             # cd backend && go test ./...（POSIX 测试，Windows 上用 WSL）
 ```
 
 单独的步骤：
@@ -86,7 +86,8 @@ src-tauri/
   src/dialogs.rs           MessageBoxW
   wix/main.wxs             per-user MSI 模板（从 tauri-bundler 2.10.4 的模板改）
   tauri.conf.json          CSP、externalBin、MSI 配置
-scripts/build-backend.*    后端构建
+scripts/build-backend.*    后端构建 + staging vendor/fnpack.exe
+vendor/fnpack.exe         随包分发的官方 fnpack（amd64），不要用 src-tauri/binaries 里的副本改它
 .github/workflows/         windows-latest 出 MSI
 ```
 
@@ -101,6 +102,13 @@ scripts/build-backend.*    后端构建
 - WiX：`src-tauri/wix/main.wxs` 是从 `tauri-bundler` 对应版本复制后改的。升级
   `@tauri-apps/cli` 时必须重新对比上游模板（新增的占位符 / WebView2 逻辑会漏），
   否则 MSI 会在 link 阶段报缺变量。当前对齐 `tauri-cli 2.12.4` / `tauri-bundler 2.10.4`。
+- **仅 amd64**：`GOARCH=amd64`、Tauri `--target x86_64-pc-windows-msvc`、Rust 的
+  `compile_error!` 三处都别放开。随包 fnpack 也是 amd64，换架构必须同时换它。
+- **fnpack 随包**：`vendor/fnpack.exe` 是唯一源；`scripts/build-backend.ps1` 复制成
+  `src-tauri/binaries/fnpack-x86_64-pc-windows-msvc.exe`，由 Tauri 的 `externalBin`
+  装到 `fsfw.exe` 旁边。运行时 `src-tauri/src/backend.rs` 用 `FSFW_FNPACK` 指过去；
+  用户已设置该环境变量时不覆盖。子进程（fnpack / tar）一律走 `internal/winproc.Hide`，
+  否则会闪控制台窗口。
 - **per-user 是硬约束**：`InstallScope="perUser"` + `LocalAppDataFolder`，不要改回
   `perMachine` / Program Files；不要新增需要管理员权限的自定义动作。
 - 卸载清理：只在 `REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE` 时执行；升级不能删数据。

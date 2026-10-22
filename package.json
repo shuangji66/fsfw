@@ -5,8 +5,8 @@
   "description": "fpkstudio for Windows — Tauri desktop shell",
   "scripts": {
     "tauri": "tauri",
-    "dev": "npm run build:backend && tauri dev",
-    "build": "npm run build:backend && tauri build",
+    "dev": "npm run build:backend && tauri dev --target x86_64-pc-windows-msvc",
+    "build": "npm run build:backend && tauri build --target x86_64-pc-windows-msvc",
     "build:backend": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-backend.ps1",
     "test:backend": "cd backend && go test ./...",
     "typecheck": "npm --prefix frontend run typecheck",

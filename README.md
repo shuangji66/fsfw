@@ -20,7 +20,8 @@ Windows 10 / 11 上浏览、编辑、打包 fnOS 的 fpk 项目，产出标准 `
 - 项目管理：新建（docker / 桌面 UI）、导入 `.fpk`、从本机路径导入、删除、最近修改排序。
 - 文件工作区：文件树 / 标签页、文本编辑器（CodeMirror）、manifest / resource / ui
   config / wizard / 环境变量等表单编辑、上传下载、解压、图标制作。
-- 打包：调官方 `fnpack`，支持多架构分别出包、把产物复制到导出目录、产物列表与删除。
+- 打包：随包分发官方 `fnpack.exe`（与 `fsfw.exe` 同目录），支持多架构分别出包、
+  把产物复制到导出目录、产物列表与删除。
 - 设置：项目目录 / 导出目录可改（默认都在 `Documents\fpkstudio` 下），中英文、深浅色、
   桌面 / 移动布局。
 - 日志：后端日志实时流式查看。
@@ -64,8 +65,9 @@ Windows 10 / 11 上浏览、编辑、打包 fnOS 的 fpk 项目，产出标准 `
 
 > MSI 只能在 Windows 上生成（需要 WiX + MSVC 链接器）。Linux / macOS 上可以跑后端测试、
 > 前端检查和 `cargo check --target x86_64-pc-windows-msvc`，但出不了安装包。
-> 当前只构建 x64 安装包；ARM64 需要把 `scripts/build-backend.ps1` 的 `GOARCH` 和
-> Tauri 的构建目标一起改掉。
+> **仅生成 amd64 平台**：`package.json` 的 `tauri build` 固定 `--target x86_64-pc-windows-msvc`，
+> 构建脚本校验两个 PE 都是 `0x8664`，Rust 侧对非 x86_64 目标直接 `compile_error!`。
+> 随包的 `fnpack.exe` 也是 amd64；ARM64 需要另行准备对应版本并重新验证。
 
 ```powershell
 npm install
@@ -77,23 +79,28 @@ npm run build
 产物：
 
 ```
-src-tauri\target\release\bundle\msi\fpkstudio for Windows_1.0.0_x64_zh-CN.msi
+src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\fpkstudio for Windows_1.0.0_x64_zh-CN.msi
 ```
 
 `npm run build` 依次做三件事：
 
-1. `scripts/build-backend.ps1`：`GOOS=windows GOARCH=amd64` 编译 Go 后端，按 Tauri
-   `externalBin` 约定输出到 `src-tauri/binaries/fsfw-backend-x86_64-pc-windows-msvc.exe`；
+1. `scripts/build-backend.ps1`：`GOOS=windows GOARCH=amd64` 编译 Go 后端，并把
+   `vendor/fnpack.exe` 一起按 Tauri `externalBin` 约定复制到
+   `src-tauri/binaries/`（`fsfw-backend-…exe` / `fnpack-…exe`）；
 2. `npm --prefix frontend run build`：Vite 产出 `frontend/dist`；
-3. `tauri build`：编译 Rust 外壳，打 MSI。
+3. `tauri build --target x86_64-pc-windows-msvc`：编译 Rust 外壳，打 amd64 MSI。
 
 只运行测试：
 
 ```powershell
-cd backend; go test ./...
+cd backend; go test ./...      # 单元测试依赖 POSIX（/bin/sh、符号链接、FIFO），在 WSL 里跑
 npm run typecheck
 npm run check
 ```
+
+> Go 单元测试里的假 fnpack 是 `#!/bin/sh` 脚本，解压测试还会造符号链接 / FIFO；这些在
+> Windows 上跑不了。CI 把测试放在 `ubuntu-latest`，Windows runner 只构建 MSI 并做
+> 真实安装/卸载冒烟。
 
 ### 开发
 
@@ -150,8 +157,10 @@ npm run dev
 - **路径与平台代码**：Windows 下用 `tar.exe` 处理 tar/zip，`.gz` / `.bz2` 走 Go 标准库；
   `.xz` / `.zst` 需要系统里另装对应工具。解压的成员名校验、符号链接 / 特殊文件清理逻辑
   保持不变。
-- **fnpack 不随包分发**：打包功能仍依赖官方 `fnpack`。把它放进 `PATH`，或用
-  `FSFW_FNPACK` 指定 `fnpack.exe` 的绝对路径；只浏览 / 编辑 / 导入 `.fpk` 不需要它。
+- **fnpack 随包分发**：`vendor/fnpack.exe`（1.2.3，amd64）会在构建时复制成
+  `fnpack.exe`，和 `fsfw.exe` 一起装进安装目录，运行时由外壳通过 `FSFW_FNPACK`
+  指给后端，不再依赖 `PATH`。如果用户自己设置了 `FSFW_FNPACK`，以用户的为准。
+  只浏览 / 编辑 / 导入 `.fpk` 不需要它。
 
 ## 安全模型
 
@@ -169,7 +178,8 @@ backend/                  Go API（模块 fsfw）
 └─ internal/
    ├─ config/             环境变量 / 命令行配置，数据目录准备
    ├─ fsx/                os.Root 沙箱文件操作与归档解压
-   ├─ fnpack/             fnpack 调用
+   ├─ fnpack/             fnpack 调用（Windows 下不弹控制台）
+   ├─ winproc/            CREATE_NO_WINDOW 封装
    ├─ projects/           项目 / 导入 / 打包 / 产物
    ├─ state/              state.json（项目目录 / 导出目录）
    ├─ logging/            文件日志 + 内存环 + SSE
@@ -181,6 +191,7 @@ src-tauri/                Tauri 2 外壳（Rust）
 ├─ src/uninstall.rs       卸载时的数据清理模式
 ├─ wix/main.wxs           per-user MSI 模板（含卸载清理动作）
 └─ tauri.conf.json
+vendor/fnpack.exe         随包分发的官方 fnpack（amd64，1.2.3）
 scripts/                  build-backend.ps1 / build-backend.sh
 docs/porting-contract.md  前后端接口契约
 .github/workflows/        windows-latest 构建 MSI

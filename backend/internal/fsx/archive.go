@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"fsfw/internal/winproc"
 )
 
 // 解压：tar 系列与 zip 交给系统的解压工具（Linux 上是 tar / unzip，Windows 上是
@@ -331,6 +333,7 @@ func runTool(ctx context.Context, bin, name string, args ...string) ([]byte, err
 	// CommandContext：请求被取消（客户端断开）或超时就把子进程杀掉，不留一个
 	// 在后台继续跑的解压进程。
 	cmd := exec.CommandContext(ctx, exe, args...)
+	winproc.Hide(cmd)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -417,6 +420,7 @@ func (x *Root) decompress(ctx context.Context, srcAbs, base, staging string, kin
 	defer f.Close()
 
 	cmd := exec.CommandContext(ctx, bin, "-dc", srcAbs)
+	winproc.Hide(cmd)
 	cmd.Stdout = f
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

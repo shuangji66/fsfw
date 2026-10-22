@@ -19,6 +19,7 @@ import (
 
 	"fsfw/internal/config"
 	"fsfw/internal/logging"
+	"fsfw/internal/winproc"
 )
 
 var versionRe = regexp.MustCompile(`(?i)version\s+v?([0-9][0-9A-Za-z.\-]*)`)
@@ -94,7 +95,9 @@ func (c *Client) Probe(ctx context.Context) (bin, version, message string) {
 	} else {
 		bin = resolved
 		// fnpack 没有 --version，直接跑会打印用法，版本号在用法里。
-		out, runErr := exec.CommandContext(ctx, bin).CombinedOutput()
+		probe := exec.CommandContext(ctx, bin)
+		winproc.Hide(probe)
+		out, runErr := probe.CombinedOutput()
 		if v := versionRe.FindStringSubmatch(string(out)); len(v) == 2 {
 			version = v[1]
 		}
@@ -116,6 +119,7 @@ func (c *Client) Run(ctx context.Context, dir string, source string, args ...str
 	bin := c.Bin()
 
 	cmd := exec.CommandContext(ctx, bin, args...)
+	winproc.Hide(cmd)
 	cmd.Dir = dir
 	// 让 fnpack 的临时目录落在数据目录内，避免跨挂载点 / 受限 /tmp。
 	cmd.Env = c.cfg.Env()
