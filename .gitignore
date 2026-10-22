@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+/frontend/node_modules/
+
+# 构建产物
+/frontend/dist/
+/src-tauri/target/
+/src-tauri/gen/
+/src-tauri/binaries/
+/target/
+*.msi
+
+# 本地工具链与缓存（开发机上把 Rust/Go 装进项目目录时用）
+/.gocache/
+/.gopath/
+/.tmp/
+/.rustup/
+/.cargo/
+/.npmcache/
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

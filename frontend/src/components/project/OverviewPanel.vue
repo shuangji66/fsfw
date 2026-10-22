@@ -1,0 +1,457 @@
+<template>
+  <div class="h-full min-h-0 overflow-y-auto thin-scroll px-4 py-3">
+    <div
+      v-if="state.error"
+      class="mx-auto mb-3 max-w-6xl rounded-md bg-red-50 dark:bg-red-950/40 px-3 py-2 text-sm text-red-700 dark:text-red-300"
+    >
+      {{ state.error }}
+    </div>
+
+    <!--
+      宽屏下左右各占一半：左边打包 / 结果 / 产物，右边 manifest 预览。
+      （清单那一列原来是固定 24rem 的，桌面宽屏上会显得偏窄，而且右边的空白用不上。）
+      窄屏仍然是一列。
+    -->
+    <div class="mx-auto grid max-w-6xl grid-cols-1 items-start gap-3 lg:grid-cols-2">
+      <!-- 左列：发布设置 / 结果 / 产物 -->
+      <div class="space-y-3">
+        <!-- 架构选择 -->
+        <section class="rounded-lg border border-slate-200 dark:border-slate-700">
+          <header class="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 px-3 py-2">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">{{ t('pack.title') }}</span>
+            <span class="flex-1" />
+            <el-button text size="small" :icon="Refresh" @click="reload" />
+          </header>
+
+          <div class="space-y-3 p-3">
+            <!-- 多架构发布开关：从标题栏挪进来，跟它控制的那一片内容放一起 -->
+            <div class="flex items-center gap-2">
+              <span class="text-sm text-slate-600 dark:text-slate-300">{{ t('pack.multi') }}</span>
+              <el-switch v-model="multi" />
+            </div>
+
+            <template v-if="multi">
+              <p class="text-sm leading-relaxed text-slate-500 dark:text-slate-400">{{ t('pack.multiHint') }}</p>
+
+              <div v-if="state.platforms.length" class="space-y-1">
+                <div class="text-sm font-medium text-slate-500 dark:text-slate-400">{{ t('pack.platforms') }}</div>
+                <el-checkbox-group v-model="selectedPlatforms" size="default">
+                  <el-checkbox
+                    v-for="name in state.platforms"
+                    :key="name"
+                    :value="name"
+                    :label="name"
+                  />
+                </el-checkbox-group>
+              </div>
+
+              <div
+                v-else
+                class="rounded-md bg-amber-50 dark:bg-amber-950/40 px-3 py-2 text-sm leading-relaxed text-amber-800 dark:text-amber-200"
+              >
+                <div>{{ t('pack.noPlatforms') }}</div>
+                <div class="mt-1">{{ t('pack.noPlatformsHint') }}</div>
+              </div>
+
+              <!-- 输入框与下面的说明左对齐，不再挂一个右侧对齐的标签列 -->
+              <div>
+                <el-input v-model="serverDir" size="default" class="w-64" />
+                <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">{{ t('pack.serverDirHint') }}</p>
+              </div>
+            </template>
+
+            <el-checkbox v-model="copyOut" size="default">{{ t('pack.copyOut') }}</el-checkbox>
+
+            <div class="flex items-center gap-2">
+              <el-button
+                type="primary"
+                size="default"
+                :loading="state.packing"
+                :icon="Box"
+                @click="run"
+              >
+                {{ state.packing ? t('pack.packing') : t('pack.start') }}
+              </el-button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 结果 -->
+        <section v-if="state.results.length" class="rounded-lg border border-slate-200 dark:border-slate-700">
+          <header class="border-b border-slate-200 dark:border-slate-700 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+            {{ t('pack.resultTitle') }}
+          </header>
+          <ul class="divide-y divide-slate-100 dark:divide-slate-700">
+            <li
+              v-for="item in state.results"
+              :key="item.platform"
+              class="flex items-center gap-2 px-3 py-2"
+            >
+              <el-tag class="text-sm" :type="item.ok ? 'success' : 'danger'" effect="plain">
+                {{ item.ok ? t('pack.success') : t('pack.failed') }}
+              </el-tag>
+              <span class="mono text-sm text-slate-700 dark:text-slate-200">{{ item.platform || '—' }}</span>
+              <span
+                class="mono min-w-0 flex-1 truncate text-sm text-slate-500 dark:text-slate-400"
+                :title="item.path"
+              >
+                {{ item.file || item.log || t('pack.failedTip') }}
+              </span>
+              <span class="shrink-0 text-sm text-slate-400 dark:text-slate-500">{{ humanSize(item.size) }}</span>
+            </li>
+          </ul>
+        </section>
+
+        <!-- 产物 -->
+        <section class="rounded-lg border border-slate-200 dark:border-slate-700">
+          <header class="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 px-3 py-2">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">{{ t('pack.artifacts') }}</span>
+            <span class="flex-1" />
+            <el-button text size="small" :icon="Refresh" @click="reload" />
+          </header>
+          <ul v-if="state.artifacts.length" class="divide-y divide-slate-100 dark:divide-slate-700">
+            <li
+              v-for="item in state.artifacts"
+              :key="item.path"
+              class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2"
+            >
+              <el-tag class="text-sm" effect="plain" type="info">
+                {{ item.scope === 'output' ? t('pack.scopeOutput') : t('pack.scopeProject') }}
+              </el-tag>
+              <!--
+                名字的 min-w 是让换行按「组」发生的：flex 换行看各项目的基准宽度，
+                名字是 flex-1（基准 0）的话它永远"放得下"，右边那组就不会整组下移，
+                而是被挤在同一行里各自折行。给个下限，窄屏才会整块换行。
+              -->
+              <span
+                class="mono min-w-[6rem] flex-1 truncate text-sm text-slate-700 dark:text-slate-200"
+                :title="item.path"
+              >
+                {{ item.name }}
+              </span>
+              <!--
+                大小 / 时间 / 目录 / 下载是一组：窄屏放不下时整组下移一行、右对齐
+                （ml-auto 只在它单独占一行时起作用——同一行时剩余空间被名字的 flex-1
+                吃掉了，auto margin 分不到东西）。
+              -->
+              <div class="ml-auto flex shrink-0 items-center gap-2">
+                <span class="text-sm text-slate-400 dark:text-slate-500">{{ item.sizeRaw }}</span>
+                <span class="text-sm text-slate-400 dark:text-slate-500">{{ item.modTime }}</span>
+                <div class="artifact-actions flex items-center gap-1">
+                  <el-button
+                    text
+                    size="small"
+                    :icon="FolderOpened"
+                    :disabled="!item.path"
+                    :title="t('pack.openFolder')"
+                    @click="openFolder(item)"
+                  />
+                  <el-button
+                    text
+                    size="small"
+                    :icon="Download"
+                    :title="t('common.download')"
+                    @click="download(getDownloadPath(item))"
+                  />
+                  <el-button
+                    text
+                    type="danger"
+                    size="small"
+                    :icon="Delete"
+                    :title="t('common.delete')"
+                    @click="removeArtifact(item)"
+                  />
+                </div>
+              </div>
+            </li>
+          </ul>
+          <p v-else class="px-3 py-3 text-sm text-slate-400 dark:text-slate-500">{{ t('pack.noArtifacts') }}</p>
+        </section>
+      </div>
+
+      <!-- 右列：manifest 预览 -->
+      <aside class="lg:sticky lg:top-0">
+        <section class="rounded-lg border border-slate-200 dark:border-slate-700">
+          <header class="flex items-center gap-2 border-b border-slate-200 dark:border-slate-700 px-3 py-2">
+            <span class="text-sm font-medium text-slate-700 dark:text-slate-200">{{ t('overview.manifest') }}</span>
+            <span class="flex-1" />
+            <el-button
+              text
+              size="small"
+              :icon="Refresh"
+              :title="t('common.refresh')"
+              @click="loadManifest"
+            />
+            <el-button
+              text
+              size="small"
+              :icon="EditPen"
+              :title="t('overview.editManifest')"
+              @click="editManifest"
+            />
+          </header>
+
+          <p
+            v-if="manifestError"
+            class="px-3 py-3 text-sm leading-relaxed break-words text-amber-700 dark:text-amber-300"
+          >
+            {{ manifestError }}
+          </p>
+
+          <div v-else-if="manifestRows.length" class="px-3 py-2">
+            <div class="mono text-sm leading-[1.55]">
+              <div
+                v-for="row in manifestRows"
+                :key="row.key"
+                class="flex"
+                :class="clamped(row) ? 'cursor-pointer' : ''"
+                @click="toggle(row)"
+              >
+                <span class="shrink-0 whitespace-pre text-slate-400 dark:text-slate-500">{{ row.padded }} = </span>
+                <span
+                  class="min-w-0 flex-1 break-words whitespace-pre-wrap text-slate-800 dark:text-slate-100"
+                  :class="clamped(row) ? 'line-clamp-3' : ''"
+                  >{{ row.value || '—' }}</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <p v-else class="px-3 py-3 text-sm text-slate-400 dark:text-slate-500">{{ t('overview.noManifest') }}</p>
+        </section>
+      </aside>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Box, Delete, Download, EditPen, FolderOpened, Refresh } from '@element-plus/icons-vue'
+import { useWorkspaceStore } from '@/stores/workspace'
+import { deleteArtifact, readFile } from '@/api/endpoints'
+import { useDownload } from './useDownload'
+import type { Artifact } from '@/api/types'
+import { humanSize } from '@/utils/format'
+import { Manifest } from '@/utils/manifest'
+import { hostErrorMessage, openInFileManager } from '@/host'
+
+const props = defineProps<{ project: string }>()
+
+const { t } = useI18n()
+const workspace = useWorkspaceStore()
+const { download } = useDownload()
+
+const state = computed(() => workspace.state(props.project))
+const multi = ref(state.value.settings.multiPlatform)
+const selectedPlatforms = ref<string[]>([...state.value.settings.platforms])
+const serverDir = ref(state.value.settings.serverDir)
+const copyOut = ref(state.value.settings.copyToOutput)
+
+// ---- manifest 预览 ----
+
+const manifestError = ref('')
+const manifestRows = ref<PreviewRow[]>([])
+const expanded = reactive(new Set<string>())
+
+/** 逐行取原文，但排除 checksum：它每次打包都会变，看它没有意义。 */
+const EXCLUDED_KEYS = new Set(['checksum'])
+/** 超过这个长度就折成三行，点一下展开——desc 常常是几百字。 */
+const CLAMP_OVER = 90
+
+interface PreviewRow {
+  key: string
+  value: string
+  /** 键按最长的一个右补空格，配 monospace 就是对齐的 `key = value`。 */
+  padded: string
+}
+
+async function loadManifest() {
+  manifestError.value = ''
+  try {
+    const res = await readFile(`${props.project}/manifest`)
+    const entries = Manifest.parse(res.content).entries.filter(
+      (e) => e.kind === 'kv' && e.key && !EXCLUDED_KEYS.has(e.key),
+    )
+    const width = entries.reduce((max, e) => Math.max(max, e.key.length), 0)
+    manifestRows.value = entries.map((e) => ({
+      key: e.key,
+      value: e.value,
+      padded: e.key.padEnd(width),
+    }))
+    expanded.clear()
+  } catch (e) {
+    manifestRows.value = []
+    manifestError.value = t('overview.manifestFailed', {
+      error: e instanceof Error ? e.message : String(e),
+    })
+  }
+}
+
+/** 长值折起来了吗（折起来的行才有「点一下展开」）。 */
+function clamped(row: PreviewRow): boolean {
+  return row.value.length > CLAMP_OVER && !expanded.has(row.key)
+}
+
+function toggle(row: PreviewRow) {
+  if (expanded.has(row.key)) expanded.delete(row.key)
+  else if (clamped(row)) expanded.add(row.key)
+}
+
+function editManifest() {
+  void workspace.openFile(props.project, `${props.project}/manifest`)
+}
+
+/**
+ * manifest 标签打开时 / 保存后跟着刷新预览。
+ *
+ * 盯的是磁盘基线（tab.origin），所以敲键盘不会每次都去读文件，但保存、还原、
+ * 刚打开这几种情况都能立刻同步。
+ */
+const manifestBaseline = computed(
+  () => state.value.files.find((f) => f.path === 'manifest')?.origin ?? '',
+)
+watch(manifestBaseline, () => {
+  void loadManifest()
+})
+
+/** 多架构发布至少要有这两个架构目录，勾上开关时缺哪个补哪个。 */
+const DEFAULT_ARCHES = ['arm', 'x86']
+
+/**
+ * 产物下载地址。
+ *
+ * `/api/fs/download` 的 `path` 是**相对项目根**的（不能带前导 `/`），而 `Artifact.path`
+ * 是绝对路径（后端 `root.Abs` 给的，供「打开所在目录」用）。两个 scope 的文件名相同，
+ * 而且打包时一定先在项目目录里落地一份，所以一律用项目内的相对路径——以前 project
+ * 那一支直接把 `item.path` 递过去，后端会去找 `projects/vol1/...` 这个不存在的路径，
+ * 表现是「列表里项目内那条产物的下载按钮点了报目标不存在」。
+ */
+function getDownloadPath(item: Artifact): string {
+  return `${props.project}/${item.name}`
+}
+
+/**
+ * 在资源管理器里打开产物所在的目录。
+ *
+ * 目录直接从产物自己的绝对路径掐掉文件名算出来，不依赖 /api/system/info 里的
+ * outputDir / projectsDir：那两个值在「设置里换过目录」之后是旧的，产物却是新的。
+ *
+ * 两个分隔符都认：Windows 上是 `C:\...\a.fpk`，只找 `/` 会把整条路径当成目录。
+ */
+async function openFolder(item: Artifact) {
+  const cut = Math.max(item.path.lastIndexOf('/'), item.path.lastIndexOf('\\'))
+  const dir = cut > 0 ? item.path.slice(0, cut) : item.path
+  try {
+    await openInFileManager(dir)
+  } catch (e) {
+    ElMessage.error(hostErrorMessage(e))
+  }
+}
+
+/** 删除一条产物（确认一次；删完刷新列表，别的行 / 计数也跟着更新）。 */
+async function removeArtifact(item: Artifact) {
+  try {
+    await ElMessageBox.confirm(t('pack.confirmDeleteArtifact', { name: item.name }), t('common.tip'), {
+      type: 'warning',
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
+    })
+  } catch {
+    return
+  }
+  try {
+    await deleteArtifact(props.project, item.name, item.scope)
+    await workspace.reloadPackageInfo(props.project)
+    ElMessage.success(t('pack.artifactDeleted', { name: item.name }))
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+async function persist() {
+  await workspace.updateSettings(props.project, {
+    multiPlatform: multi.value,
+    platforms: selectedPlatforms.value,
+    serverDir: serverDir.value,
+    copyToOutput: copyOut.value,
+  })
+}
+
+async function reload() {
+  await workspace.reloadPackageInfo(props.project)
+  multi.value = state.value.settings.multiPlatform
+  selectedPlatforms.value = [...state.value.settings.platforms]
+  serverDir.value = state.value.settings.serverDir
+  copyOut.value = state.value.settings.copyToOutput
+  await loadManifest()
+}
+
+/**
+ * 打开多架构发布时补齐 arm / x86 目录。
+ *
+ * 导入的 fpk 里没有这套工作目录（后端导入时补过一次），但项目也可能是更早导入的、
+ * 或者目录被删过。缺目录时这一页只有一个「还没有架构目录」的空状态，用户会以为是坏的。
+ * 只建目录、不自动勾选：空目录打出来的包内容是空的，得自己把产物放进去。
+ */
+async function ensureArchDirs() {
+  const missing = DEFAULT_ARCHES.filter((arch) => !state.value.platforms.includes(arch))
+  if (!missing.length) return
+  try {
+    for (const arch of missing) {
+      await workspace.createEntryAt(props.project, `${props.project}/building/platform`, arch, true)
+    }
+    await workspace.reloadPackageInfo(props.project)
+    ElMessage.info(t('pack.archAdded', { names: missing.join(', ') }))
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+watch(multi, (on) => {
+  if (on) void ensureArchDirs()
+})
+
+/**
+ * 官方约定：项目里有 i18n/ 目录就必须提供 en-US（缺失的话应用中心里的元数据、入口
+ * 和向导文案在英文环境下全是空的）。界面在快捷设置的 i18n 分组里提示，这里在打包前
+ * 再拦一道——**后端 `Pack` 也会拒绝**，这里只是把话说明白、少发一趟注定失败的请求。
+ *
+ * 目录列表现拉一次（force）：这条判据要用来拦打包，读缓存既可能放行一个已经坏掉的
+ * 项目，也可能反过来拦下一个刚补好 en-US 的项目。
+ */
+async function missingEnUS(): Promise<boolean> {
+  await workspace
+    .loadDir(props.project, workspace.i18nDirOf(props.project), true)
+    .catch(() => undefined)
+  return workspace.missingEnUS(props.project)
+}
+
+async function run() {
+  if (multi.value && !selectedPlatforms.value.length) {
+    ElMessage.warning(t('pack.selectPlatform'))
+    return
+  }
+  if (await missingEnUS()) {
+    ElMessage.error(t('pack.missingEnUS'))
+    return
+  }
+  try {
+    // persist() 必须在 try 里：它是一次真的写请求（保存打包偏好），失败时
+    // 以前什么都不发生——按钮不转、没有提示、也没有日志，看着就像「点了没反应」。
+    await persist()
+    const results = await workspace.pack(props.project)
+    const failed = results.filter((r) => !r.ok)
+    if (failed.length) ElMessage.error(t('pack.failedTip'))
+    else ElMessage.success(t('pack.resultTitle'))
+    // 打包不改项目里的 manifest（在暂存副本上改），但顺手重读一次预览，
+    // 免得预览停在打包前的样子。
+    await loadManifest()
+  } catch (e) {
+    ElMessage.error(e instanceof Error ? e.message : String(e))
+  }
+}
+
+onMounted(reload)
+</script>

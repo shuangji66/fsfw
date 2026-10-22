@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "fpkstudio for Windows",
+  "version": "1.0.0",
+  "identifier": "com.fpkstudio.fsfw",
+  "build": {
+    "beforeDevCommand": "npm --prefix frontend run dev",
+    "devUrl": "http://localhost:5273",
+    "beforeBuildCommand": "npm --prefix frontend run build",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self' customprotocol: asset:; connect-src ipc: http://ipc.localhost http://127.0.0.1:*; img-src 'self' asset: http://asset.localhost data: blob: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'",
+      "devCsp": "default-src 'self' customprotocol: asset: http://localhost:5273; connect-src ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:5273 ws://localhost:5273; img-src 'self' asset: http://asset.localhost data: blob: http://127.0.0.1:* http://localhost:5273; style-src 'self' 'unsafe-inline' http://localhost:5273; font-src 'self' data: http://localhost:5273; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5273; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "publisher": "fpkstudio",
+    "copyright": "Copyright © 2026 fpkstudio",
+    "category": "DeveloperTool",
+    "shortDescription": "fpkstudio for Windows",
+    "longDescription": "FSFW (fpkstudio for Windows) — a desktop workbench for browsing, editing and packaging fnOS fpk projects on Windows 10/11.",
+    "externalBin": ["binaries/fsfw-backend"],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "wix": {
+        "language": ["zh-CN"],
+        "upgradeCode": "8E2C41D6-2B7A-5F03-9C48-6A1D7E3B9F52",
+        "template": "wix/main.wxs"
+      }
+    }
+  }
+}
