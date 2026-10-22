@@ -126,6 +126,11 @@ pub fn start(data_dir: &Path, version: &str) -> Result<Started, String> {
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
+    // 开发构建允许 Vite 的任意 localhost 端口跨域调 API；生产构建不放行
+    // （见后端 server.allowDevOrigins）。
+    if tauri::is_dev() {
+        command.arg("--dev");
+    }
     hide_console(&mut command);
 
     // 安装目录里与 fsfw.exe 并排的 fnpack.exe。用户显式设置了 FSFW_FNPACK 时以用户为准，
@@ -323,6 +328,10 @@ fn append_log(data_dir: &Path, line: &str) {
 }
 
 /// 取日志末尾若干行，启动失败时直接展示给用户。
+///
+/// 按字节读、再 lossy 解码：日志里是中文，从 `len - 16K` 这个任意偏移开始读，
+/// 很可能正好切在多字节字符中间。`read_to_string` 遇到非法 UTF-8 会整段失败，
+/// 于是最需要日志的时候弹窗里反而什么都没有。
 fn log_tail(path: &Path, lines: usize) -> String {
     let mut file: File = match File::open(path) {
         Ok(file) => file,
@@ -333,10 +342,16 @@ fn log_tail(path: &Path, lines: usize) -> String {
     if file.seek(SeekFrom::Start(start)).is_err() {
         return String::new();
     }
-    let mut buf = String::new();
-    if file.read_to_string(&mut buf).is_err() {
+    let mut bytes = Vec::new();
+    if file.read_to_end(&mut bytes).is_err() {
         return String::new();
     }
-    let collected: Vec<&str> = buf.lines().rev().take(lines).collect();
-    collected.into_iter().rev().collect::<Vec<_>>().join("\n")
+    let text = String::from_utf8_lossy(&bytes);
+    let mut collected: Vec<&str> = text.lines().collect();
+    // 不是从文件头开始读时，第一行大概率是半截，丢掉。
+    if start > 0 && !collected.is_empty() {
+        collected.remove(0);
+    }
+    let tail: Vec<&str> = collected.into_iter().rev().take(lines).collect();
+    tail.into_iter().rev().collect::<Vec<_>>().join("\n")
 }

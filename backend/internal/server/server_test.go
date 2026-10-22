@@ -106,7 +106,11 @@ func TestCORSReflectsAllowedOrigin(t *testing.T) {
 
 // 预检请求不带 token，必须在鉴权之前回 204。
 func TestCORSPreflight(t *testing.T) {
-	s, _ := newTestServerWith(t, func(c *config.Config) { c.Token = "s3cret" })
+	// Tauri dev：带 token，但页面来自 Vite（localhost:5273），靠 --dev 放行。
+	s, _ := newTestServerWith(t, func(c *config.Config) {
+		c.Token = "s3cret"
+		c.Dev = true
+	})
 
 	rec := serve(s, http.MethodOptions, "/api/fs/upload", map[string]string{
 		"Origin":                         "http://localhost:5173",
@@ -232,5 +236,26 @@ func TestUnknownPathJSON404(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["error"] == "" {
 			t.Errorf("%s 响应不是带 error 的 JSON：%s", path, rec.Body.String())
 		}
+	}
+}
+
+// 生产构建（带 token、非 dev）不放行任意 localhost 端口：只有 Tauri 自己的源算数。
+func TestCORSRejectsLocalDevOriginInProduction(t *testing.T) {
+	s, _ := newTestServerWith(t, func(c *config.Config) { c.Token = "s3cret" })
+
+	rec := serve(s, http.MethodGet, "/api/projects", map[string]string{
+		"Origin":    "http://localhost:5273",
+		tokenHeader: "s3cret",
+	})
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("生产模式不该回显 localhost 源：%q", got)
+	}
+
+	rec = serve(s, http.MethodGet, "/api/projects", map[string]string{
+		"Origin":    "http://tauri.localhost",
+		tokenHeader: "s3cret",
+	})
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://tauri.localhost" {
+		t.Errorf("Tauri 源应当照常放行：%q", got)
 	}
 }

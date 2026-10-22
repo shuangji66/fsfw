@@ -122,7 +122,8 @@ vendor/fnpack.exe         随包分发的官方 fnpack（amd64），不要用 sr
   **WXS 必须保持 ASCII**，中文只放 WXL；改 WXL 路径时同步
   `tauri.conf.json` 的 `bundle.windows.wix.language`。
 - 卸载清理：只在 `REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE` 时执行；升级不能删数据。
-  静默卸载用 `CLEANDOCS=0/1` 跳过询问。
+  交互式卸载弹询问；静默 / 基本 UI（UILevel < 4）默认保留数据、不弹窗，要删得传
+  `CLEANDOCS=1`。
 
 ## Windows 上的坑（已经踩过的）
 

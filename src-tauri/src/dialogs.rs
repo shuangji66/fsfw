@@ -58,6 +58,13 @@ pub fn confirm(title: &str, text: &str) -> bool {
 /// 设置里的「关于」仓库链接、以后可能加的帮助链接都走这里；不能让 WebView 自己
 /// 导航过去——那会把整个应用界面替换成一个网页，还回不到工作区。
 pub fn open_external(url: &str) -> Result<(), String> {
+    // ShellExecuteW / xdg-open 会按 scheme 分派，`file:` 和自定义协议能直接拉起
+    // 本机程序。这里只接受 http/https（调用方也做了一次同样的判断）。
+    let lower = url.trim().to_ascii_lowercase();
+    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+        return Err(format!("只允许打开 http/https 链接：{url}"));
+    }
+
     #[cfg(windows)]
     {
         use windows_sys::Win32::UI::Shell::ShellExecuteW;

@@ -66,13 +66,19 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) error {
 			next.OutputDir = strings.TrimSpace(*req.OutputDir)
 		}
 
-		// 先真正换一遍（校验 + 打开沙箱），成功了再落盘——反过来的话，一次
-		// 打不开的路径会被持久化，下次启动还得靠人去删 state.json。
-		if err := s.prj.SetRoots(next.ProjectRoot, next.OutputDir); err != nil {
-			return badRequest("%v", err)
-		}
+		// 先落盘、再真正切换沙箱。
+		//
+		// 反过来的顺序在保存失败时会留下「内存里已经生效、磁盘上没变」的分裂状态，
+		// 而且没有回滚路径。先保存最多短暂落下一个过期路径：切换失败就立刻把旧值
+		// 写回去；即便回滚也失败，下次启动也只是按默认目录跑（见 main.go 的兜底）。
 		if err := s.state.Save(next); err != nil {
 			return internal("保存目录设置失败: %v", err)
+		}
+		if err := s.prj.SetRoots(next.ProjectRoot, next.OutputDir); err != nil {
+			if rbErr := s.state.Save(saved); rbErr != nil {
+				s.log.Warnf("目录设置没有生效，回写 state.json 也失败了: %v", rbErr)
+			}
+			return badRequest("%v", err)
 		}
 
 		s.log.Infof("目录设置已更新：项目根目录 %s，输出目录 %s", s.prj.ProjectRoot(), s.prj.OutputDir())

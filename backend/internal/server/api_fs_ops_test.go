@@ -169,7 +169,6 @@ func TestQueryRelNormalization(t *testing.T) {
 	}{
 		{"根目录（空）", "?path=", nil, "."},
 		{"根目录（点）", "?path=.", nil, "."},
-		{"越界写法归一成根", "?path=../../", nil, "."},
 		{"绝对路径当相对", "?path=/demo", nil, "demo"},
 		{"body 里的 path", "", map[string]any{"path": "demo"}, "demo"},
 	} {
@@ -232,5 +231,19 @@ func TestFSExtractRejectsBadTarget(t *testing.T) {
 				t.Errorf("状态码 = %d，期望 %d（%v）", code, tc.want, body)
 			}
 		})
+	}
+}
+
+// 含 `..` 的路径不再「静默归一成根」：沙箱挡得住，但用户会改到根内同名文件，
+// 事后完全看不出发生了什么。
+func TestQueryRelRejectsTraversal(t *testing.T) {
+	s, dataDir := newTestServer(t)
+	seedProject(t, dataDir)
+
+	for _, p := range []string{"../x", "../../", `..\x`, "demo/../../x"} {
+		code, body := doJSON(t, s, "/api/fs/list", map[string]any{"path": p})
+		if code != http.StatusBadRequest {
+			t.Errorf("path=%q：状态码 = %d，期望 400（%v）", p, code, body)
+		}
 	}
 }

@@ -29,7 +29,7 @@ import (
 // tar 不带压缩参数：GNU tar 与 Windows 的 bsdtar 都会按魔数自己认出 gz / bz2 /
 // xz / zst，一个命令覆盖全部 tar 变体，也省得我们把后缀和压缩算法绑死。
 //
-// 安全上做四件事：
+// 安全上做七件事：
 //  1. 解压前先列一遍成员名（tar 用 `tar -t`、zip 在 Linux 上用 `unzip -Z1`、
 //     在 Windows 上用 `tar -t`），含绝对路径或 `..` 段的归档直接拒绝。**不能只看
 //     退出码**：tar 对越界名字只给警告、退出码还是 0；Info-ZIP 更省事——它把越界
@@ -47,10 +47,22 @@ import (
 //  6. 解压结果里的**非普通文件一律删掉**（见 sanitizeExtracted）：tar 能造出 FIFO，
 //     而 FIFO 在没人写的时候 open 会一直阻塞——留在项目里，之后每次读它 / 解压它都会
 //     永久占住一个 goroutine 和一个子进程。
+//  7. 解压结果有体积 / 文件数配额（maxExtractBytes / maxExtractFiles）：压缩炸弹
+//     不能把数据目录写满。单文件的 .gz / .bz2 在写的时候就有硬上限；tar / zip
+//     由外部命令直接落盘，只能解开之后统一校验（内容会短暂占用磁盘，但不会留在
+//     项目里）。
 //
 // 同名冲突一律**跳过**，不覆盖：解压最常见的情形是往一个已经存在的目录上补内容
 // （比如把 app.tgz 解到已经有 app/ 的项目里），静默覆盖用户的文件是不可逆的。
 // 跳过的数量会返回给界面，让用户知道哪些没动。
+
+// 解压配额。变量而不是常量：测试里调小，才能在没有几个 G 数据的情况下验超限。
+var (
+	// maxExtractBytes 是单次解压允许写出的总字节数。
+	maxExtractBytes int64 = 8 << 30
+	// maxExtractFiles 是单次解压允许写出的文件数（空文件也占 inode）。
+	maxExtractFiles int64 = 200000
+)
 
 // 解压用的外部命令（TarBin / UnzipBin / …）由平台决定，见 archive_tools_*.go：
 // Linux 上默认 /usr/bin 下的那几个工具；Windows 上只用系统自带的 System32\tar.exe
@@ -216,6 +228,11 @@ func (x *Root) Extract(ctx context.Context, rel string) (ExtractResult, error) {
 	if err != nil {
 		return res, err
 	}
+	// 外部 tar / unzip 没法边解边限流，这里统一校验一次；失败时上面的 defer 会把
+	// 整个暂存目录删掉，不会把炸弹留在项目里。
+	if err := x.checkExtractBudget(staging); err != nil {
+		return res, err
+	}
 
 	// 链接与 FIFO / 设备节点都不还原、也不留：链接可以指向归档之外，FIFO 会让之后
 	// 每一次读它都永久阻塞。数量报给界面，别让用户以为文件凭空少了。
@@ -230,6 +247,31 @@ func (x *Root) Extract(ctx context.Context, rel string) (ExtractResult, error) {
 		return res, err
 	}
 	return res, nil
+}
+
+// checkExtractBudget 校验暂存区里的文件数与总字节数。
+//
+// 走 Lstat：链接本来就会被 sanitizeExtracted 删掉，不把它们的目标算进来。
+func (x *Root) checkExtractBudget(base string) error {
+	var (
+		total int64
+		files int64
+	)
+	return x.Walk(base, func(cur string, _ bool, _ string) error {
+		fi, statErr := x.r.Lstat(cur)
+		if statErr != nil || !fi.Mode().IsRegular() {
+			return nil
+		}
+		files++
+		total += fi.Size()
+		if total > maxExtractBytes {
+			return fmt.Errorf("%w：解压出的内容超过 %s，已中止", ErrTooLarge, HumanSize(maxExtractBytes))
+		}
+		if files > maxExtractFiles {
+			return fmt.Errorf("%w：解压出的文件数超过 %d，已中止", ErrTooLarge, maxExtractFiles)
+		}
+		return nil
+	})
 }
 
 // sanitizeExtracted 删掉解压到 base 里的符号链接与非普通文件，返回两类删除的数量。
@@ -419,12 +461,16 @@ func (x *Root) decompress(ctx context.Context, srcAbs, base, staging string, kin
 	}
 	defer f.Close()
 
+	bw := &budgetWriter{w: f}
 	cmd := exec.CommandContext(ctx, bin, "-dc", srcAbs)
 	winproc.Hide(cmd)
-	cmd.Stdout = f
+	cmd.Stdout = bw
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if bw.over {
+			return fmt.Errorf("%w：%s 解压后超过 %s", ErrTooLarge, base, HumanSize(maxExtractBytes))
+		}
 		return fmt.Errorf("解压 %s 失败: %w: %s", base, err, tailText(stderr.String()))
 	}
 	return nil
@@ -462,10 +508,35 @@ func (x *Root) decompressStdlib(srcAbs, base, staging string, kind ArchiveKind) 
 	}
 	defer f.Close()
 
-	if _, err := io.Copy(f, r); err != nil {
+	// 标准库这条路可以边写边限流：压缩比再高也不会先把磁盘写满。
+	bw := &budgetWriter{w: f}
+	if _, err := io.Copy(bw, r); err != nil {
+		if bw.over {
+			return fmt.Errorf("%w：%s 解压后超过 %s", ErrTooLarge, base, HumanSize(maxExtractBytes))
+		}
 		return fmt.Errorf("解压 %s 失败: %w", base, err)
 	}
 	return nil
+}
+
+// budgetWriter 在写出超过 maxExtractBytes 时直接报错，让 io.Copy 停下来。
+//
+// 子进程那条路（gzip -dc 等）也用它：写端报错后 exec 的复制协程退出，子进程
+// 收到 EPIPE 跟着结束，不会留下一个还在往磁盘灌数据的解压进程。
+type budgetWriter struct {
+	w    io.Writer
+	n    int64
+	over bool
+}
+
+func (b *budgetWriter) Write(p []byte) (int, error) {
+	if b.n+int64(len(p)) > maxExtractBytes {
+		b.over = true
+		return 0, ErrTooLarge
+	}
+	n, err := b.w.Write(p)
+	b.n += int64(n)
+	return n, err
 }
 
 // createSingle 在暂存目录里建「去掉压缩后缀」的目标文件。

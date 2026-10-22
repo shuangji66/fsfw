@@ -8,9 +8,12 @@
 package fnpack
 
 import (
-	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -115,6 +118,10 @@ func (c *Client) Probe(ctx context.Context) (bin, version, message string) {
 }
 
 // Run 在 dir 下执行 fnpack 子命令，输出逐行转给日志器。
+//
+// 输出先落到临时文件，再由一个读协程边读边转给日志器，原因见下面注释：用管道
+// 时「先等读协程」会被继承了管道的孙进程挂死，「先等进程」又会丢掉管道里没读走
+// 的尾巴。文件没有这两个问题——子进程直接写文件句柄，进程退出后内容一定完整。
 func (c *Client) Run(ctx context.Context, dir string, source string, args ...string) (string, error) {
 	bin := c.Bin()
 
@@ -124,14 +131,24 @@ func (c *Client) Run(ctx context.Context, dir string, source string, args ...str
 	// 让 fnpack 的临时目录落在数据目录内，避免跨挂载点 / 受限 /tmp。
 	cmd.Env = c.cfg.Env()
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
+	// TmpDir 正常由 config 建好；这里补一次 mkdir，免得用户在运行期把 tmp 目录
+	// 删掉之后连「新建项目」都做不了（CreateTemp 不会自己建父目录）。
+	if c.cfg.TmpDir != "" {
+		if err := os.MkdirAll(c.cfg.TmpDir, 0o755); err != nil {
+			return "", fmt.Errorf("创建临时目录失败: %w", err)
+		}
 	}
-	stderr, err := cmd.StderrPipe()
+	outFile, err := os.CreateTemp(c.cfg.TmpDir, "fnpack-*.log")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("创建 fnpack 输出临时文件失败: %w", err)
 	}
+	outPath := outFile.Name()
+	defer func() {
+		_ = outFile.Close()
+		_ = os.Remove(outPath)
+	}()
+	cmd.Stdout = outFile
+	cmd.Stderr = outFile
 
 	c.log.Line(source, logging.LevelInfo, fmt.Sprintf("$ fnpack %s", strings.Join(args, " ")))
 	c.log.Line(source, logging.LevelDebug, fmt.Sprintf("  工作目录: %s", dir))
@@ -141,45 +158,77 @@ func (c *Client) Run(ctx context.Context, dir string, source string, args ...str
 	}
 
 	var (
-		wg sync.WaitGroup
-		mu sync.Mutex
-		sb strings.Builder
+		sb   strings.Builder
+		done = make(chan struct{})
+		stop = make(chan struct{})
 	)
-	collect := func(r *bufio.Scanner) {
-		defer wg.Done()
-		// 默认行长上限是 64KB。fnpack（或它调用的工具）偶尔打印超长行时，Scanner 会直接
-		// 报错并停止扫描，而这里原本不查 Err()——日志与打包结论会静默截断，用户只能看到
-		// 「怎么少了一段」。放宽上限，真读不下去时留一条记录。
-		r.Buffer(make([]byte, 0, 64*1024), 1<<20)
-		for r.Scan() {
-			line := r.Text()
-			mu.Lock()
+	go func() {
+		defer close(done)
+		reader, err := os.Open(outPath)
+		if err != nil {
+			c.log.Line(source, logging.LevelWarn, fmt.Sprintf("读取 fnpack 输出失败: %v", err))
+			return
+		}
+		defer reader.Close()
+
+		var pending []byte
+		emit := func(line string) {
 			sb.WriteString(line)
 			sb.WriteByte('\n')
-			mu.Unlock()
 			c.log.Line(source, logging.LevelInfo, line)
 		}
-		if err := r.Err(); err != nil {
-			c.log.Line(source, logging.LevelWarn, fmt.Sprintf("读取输出中断: %v", err))
+		consume := func(chunk []byte) {
+			pending = append(pending, chunk...)
+			for {
+				i := bytes.IndexByte(pending, '\n')
+				if i < 0 {
+					break
+				}
+				emit(strings.TrimSuffix(string(pending[:i]), "\r"))
+				pending = pending[i+1:]
+			}
+			// 超长行不能无限攒着（以前的 Scanner 也有 1MB 上限）。
+			if len(pending) > maxOutputLine {
+				emit(string(pending[:maxOutputLine]))
+				pending = pending[maxOutputLine:]
+			}
 		}
-	}
-	wg.Add(2)
-	go collect(bufio.NewScanner(stdout))
-	go collect(bufio.NewScanner(stderr))
 
-	// **先 Wait，再等读协程**（顺序不能反）。
-	//
-	// 反过来的写法（先 wg.Wait()）看起来更「按文档」——os/exec 的文档确实写了「读完管道
-	// 之前调 Wait 是不对的」——但它会**永久挂住**：只要子进程留下一个继承了 stdout/stderr
-	// 的孙进程（后台进程、守护化的 helper…），管道的写端就一直开着，读协程永远等不到 EOF，
-	// 而 Wait 才是负责收尸的那个。实测（/bin/sh 里 `(sleep 20) &`）：先 wg.Wait() 5 秒
-	// 都不返回，先 cmd.Wait() 1ms 返回。
-	//
-	// 这个顺序的代价是：Wait 关掉父侧管道时，读协程可能还没把缓冲里最后一点数据取完
-	// （文档里的那句警告）。相比之下「打包请求永远挂着、界面一直转圈」严重得多，所以选它；
-	// 读协程的 `r.Err()` 会把这种情况记一条 warn。
+		buf := make([]byte, 32<<10)
+		for {
+			n, readErr := reader.Read(buf)
+			if n > 0 {
+				consume(buf[:n])
+			}
+			if readErr == nil {
+				continue
+			}
+			if !errors.Is(readErr, io.EOF) {
+				c.log.Line(source, logging.LevelWarn, fmt.Sprintf("读取 fnpack 输出中断: %v", readErr))
+				return
+			}
+			// 读到当前末尾：进程还在跑就过一会儿再看有没有新内容。
+			select {
+			case <-stop:
+				// 进程已经退出：把剩余内容读完，最后一行没有换行也要吐出来。
+				if rest, err := io.ReadAll(reader); err == nil {
+					consume(rest)
+				}
+				if len(pending) > 0 {
+					emit(strings.TrimSuffix(string(pending), "\r"))
+				}
+				return
+			case <-time.After(outputPollInterval):
+			}
+		}
+	}()
+
+	// 只等进程退出，不等读协程：孙进程可能继承了输出文件句柄继续写（`(sleep 20) &`
+	// 这种），等它等于把打包请求挂死。读协程收到 stop 后会做最后一次全量读取，
+	// 所以进程退出时的输出不会丢。
 	waitErr := cmd.Wait()
-	wg.Wait()
+	close(stop)
+	<-done
 
 	output := sb.String()
 	if waitErr != nil {
@@ -187,6 +236,13 @@ func (c *Client) Run(ctx context.Context, dir string, source string, args ...str
 	}
 	return output, waitErr
 }
+
+const (
+	// maxOutputLine 是单行日志的上限，超出按行截断，避免畸形输出吃掉内存。
+	maxOutputLine = 1 << 20
+	// outputPollInterval 是在输出文件末尾等新内容时的轮询间隔。
+	outputPollInterval = 20 * time.Millisecond
+)
 
 // Create 创建项目骨架。dir 是父目录，name 是项目名。
 //

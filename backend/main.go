@@ -53,6 +53,7 @@ func main() {
 		flagRuntime   = flag.String("runtime-file", "", "运行时信息文件路径（默认 <data>/run/server.json）")
 		flagDataDir   = flag.String("data-dir", "", "数据目录（默认 Windows 下为 Documents\\fpkstudio）")
 		flagParentPID = flag.Int("parent-pid", 0, "父进程 pid，非 0 时父进程退出后本进程跟着退出")
+		flagDev       = flag.Bool("dev", false, "开发模式（允许任意 localhost 端口作为 CORS 源）")
 	)
 	flag.Parse()
 
@@ -83,6 +84,9 @@ func main() {
 	if set["parent-pid"] {
 		opt.ParentPID = flagParentPID
 	}
+	if set["dev"] {
+		opt.Dev = flagDev
+	}
 
 	cfg, err := config.LoadWith(version, opt)
 	if err != nil {
@@ -98,6 +102,7 @@ func main() {
 		fmt.Printf("runtime 文件  : %s\n", cfg.RuntimeFile)
 		fmt.Printf("监听地址      : %s\n", cfg.ListenAddr())
 		fmt.Printf("鉴权          : %s\n", tokenState(cfg.Token))
+		fmt.Printf("开发模式      : %s\n", devState(cfg.Dev))
 		fmt.Printf("fnpack        : %s\n", cfg.FnpackBin)
 		fmt.Printf("状态文件      : %s\n", cfg.StateFile)
 		if cfg.ParentPID > 0 {
@@ -164,6 +169,14 @@ func tokenState(token string) string {
 		return "关闭（没有 token，仅供本机浏览器开发）"
 	}
 	return "已启用"
+}
+
+// devState 把开发模式写成一句人话（--paths 里用）。
+func devState(dev bool) string {
+	if dev {
+		return "是（CORS 放行任意 localhost 端口）"
+	}
+	return "否"
 }
 
 func fatal(err error) {

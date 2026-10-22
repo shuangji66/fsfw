@@ -262,3 +262,34 @@ func TestEnvPointsTmpToDataDir(t *testing.T) {
 		}
 	}
 }
+
+// 开发模式：环境变量 / 命令行都能开，默认关。
+func TestDevFlag(t *testing.T) {
+	dataDir := shortTempDir(t)
+	t.Setenv(EnvDataDir, dataDir)
+	t.Setenv(EnvDev, "1")
+
+	c, err := Load("test")
+	if err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+	if !c.Dev {
+		t.Error("FSFW_DEV=1 应当打开开发模式")
+	}
+
+	t.Setenv(EnvDev, "")
+	dev := true
+	c, err = LoadWith("test", Options{Dev: &dev})
+	if err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+	if !c.Dev {
+		t.Error("Options.Dev 应当覆盖环境变量")
+	}
+
+	if c, err := Load("test"); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	} else if c.Dev {
+		t.Error("默认不该是开发模式")
+	}
+}

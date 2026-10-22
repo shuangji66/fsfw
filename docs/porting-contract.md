@@ -63,9 +63,10 @@ token, either:
 - query parameter `?token=<token>` (downloads, `<img>`, EventSource).
 
 `OPTIONS` preflight returns 204 with CORS headers. Allowed origins:
-`http://tauri.localhost`, `https://tauri.localhost`, `tauri://localhost`, and
-`http://localhost:<any>` / `http://127.0.0.1:<any>` (Vite dev). When `--token`
-is empty (plain browser dev) authentication is disabled.
+`http://tauri.localhost`, `https://tauri.localhost`, `tauri://localhost`, and —
+only with `--dev` / `FSFW_DEV=1` or an empty token — `http://localhost:<any>` /
+`http://127.0.0.1:<any>` (Vite dev). When `--token` is empty (plain browser dev)
+authentication is disabled.
 
 ### Removed from fpkstudio
 
@@ -121,6 +122,7 @@ Prefix `FSFW_` (was `FPKSTUDIO_`):
 | `FSFW_HOST` | listen host, same as `--host` (loopback only) |
 | `FSFW_PORT` | listen port, same as `--port` (0 = system-assigned) |
 | `FSFW_RUNTIME_FILE` | runtime JSON path, same as `--runtime-file` |
+| `FSFW_DEV` | `1` = dev mode, same as `--dev` (allow any localhost CORS origin) |
 
 ## Frontend host layer
 

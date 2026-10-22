@@ -94,14 +94,16 @@
         <CustomAction Id="LaunchApplication" Impersonate="yes" FileKey="Path" ExeCommand="[LAUNCHAPPARGS]" Return="asyncNoWait" />
 
         <!-- Remove user data on uninstall. Impersonate=yes is required so the
-             prompt appears on the current user's desktop. -->
+             prompt appears on the current user's desktop. UILevel is passed
+             along so silent / basic-UI uninstalls (no one to click the prompt)
+             keep the data instead of blocking. -->
         <Property Id="CLEANDOCS" Secure="yes" />
         <CustomAction Id="RemoveUserData"
                       FileKey="Path"
                       Execute="immediate"
                       Impersonate="yes"
                       Return="ignore"
-                      ExeCommand="--uninstall-clean-docs --clean-docs-mode [CLEANDOCS]" />
+                      ExeCommand="--uninstall-clean-docs --ui-level=[UILevel] --clean-docs-mode=[CLEANDOCS]" />
 
         <UI>
             <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR" />

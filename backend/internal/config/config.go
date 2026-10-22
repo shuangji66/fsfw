@@ -33,6 +33,7 @@ const (
 	EnvToken       = "FSFW_TOKEN"
 	EnvRuntimeFile = "FSFW_RUNTIME_FILE"
 	EnvParentPID   = "FSFW_PARENT_PID"
+	EnvDev         = "FSFW_DEV"
 )
 
 // Config 是解析完成的运行时配置。
@@ -62,6 +63,9 @@ type Config struct {
 	RuntimeFile string
 	// ParentPID 是父进程（Tauri 外壳）的 pid，非 0 时由看门狗盯着，父进程退出就跟着退。
 	ParentPID int
+	// Dev 为真表示这是开发构建（Tauri dev / 手工联调）。目前只影响 CORS：
+	// 只有开发模式（或鉴权关闭）才把任意 localhost 端口当作允许的源。
+	Dev bool
 
 	// FnpackBin 是 fnpack 可执行文件的路径或名字。
 	FnpackBin string
@@ -84,6 +88,7 @@ type Options struct {
 	Token       *string
 	RuntimeFile *string
 	ParentPID   *int
+	Dev         *bool
 }
 
 func env(key, def string) string {
@@ -147,6 +152,11 @@ func LoadWith(version string, opt Options) (*Config, error) {
 		return nil, fmt.Errorf("父进程 pid 不合法：%d", parentPID)
 	}
 
+	dev := envBool(env(EnvDev, ""))
+	if opt.Dev != nil {
+		dev = *opt.Dev
+	}
+
 	c := &Config{
 		Version:   version,
 		DataDir:   filepath.Clean(dataDir),
@@ -159,6 +169,7 @@ func LoadWith(version string, opt Options) (*Config, error) {
 		ListenPort: port,
 		Token:      strings.TrimSpace(env(EnvToken, "")),
 		ParentPID:  parentPID,
+		Dev:        dev,
 	}
 	if opt.Token != nil {
 		c.Token = strings.TrimSpace(*opt.Token)
@@ -310,6 +321,15 @@ func parsePID(s string) (int, error) {
 		return 0, fmt.Errorf("解析父进程 pid 失败（%s=%q）: %w", EnvParentPID, s, err)
 	}
 	return int(n), nil
+}
+
+// envBool 解析开关型环境变量：1 / true 为真，其余（含空）为假。
+func envBool(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // atoiDefault 解析一个正整数配置，非法或超范围时回落到默认值。

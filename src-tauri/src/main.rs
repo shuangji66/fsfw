@@ -89,16 +89,12 @@ fn startup(app: &mut tauri::App) -> Result<(), String> {
             if is_app_url(url) {
                 true
             } else {
-                if let Err(err) = dialogs::open_external(url.as_str()) {
-                    dialogs::error("打开链接失败", &err);
-                }
+                open_external_url(url);
                 false
             }
         })
         .on_new_window(|url, _features| {
-            if let Err(err) = dialogs::open_external(url.as_str()) {
-                dialogs::error("打开链接失败", &err);
-            }
+            open_external_url(&url);
             tauri::webview::NewWindowResponse::Deny
         })
         .build()
@@ -127,11 +123,26 @@ fn init_script(init: &InitConfig) -> Result<String, String> {
     ))
 }
 
+/// 站外链接只交给默认浏览器处理 http/https。
+///
+/// 其它 scheme（`file:`、`ms-settings:`、以及注册过的自定义协议）直接忽略：
+/// 这些协议会交给 ShellExecute，可能变成「点一个链接就启动本机程序」的入口。
+/// 不放行 `data:` 导航也是同一个理由：data: 文档不受 Tauri CSP 约束，而初始化
+/// 脚本仍会注入带 token 的 window.__FSFW__。
+fn open_external_url(url: &tauri::Url) {
+    if !matches!(url.scheme(), "http" | "https") {
+        return;
+    }
+    if let Err(err) = dialogs::open_external(url.as_str()) {
+        dialogs::error("打开链接失败", &err);
+    }
+}
+
 /// 应用自己的页面：生产环境是 `http://tauri.localhost` / `tauri://`，
 /// 开发环境是 Vite 的 `http://localhost:5273`。
 fn is_app_url(url: &tauri::Url) -> bool {
     match url.scheme() {
-        "tauri" | "about" | "data" | "blob" => true,
+        "tauri" | "about" | "blob" => true,
         "http" | "https" => {
             let host = url.host_str().unwrap_or_default();
             host == "tauri.localhost"

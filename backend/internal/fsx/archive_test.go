@@ -745,3 +745,115 @@ func TestDecompressStdlib(t *testing.T) {
 		t.Errorf("解压内容 = %q", got)
 	}
 }
+
+// withExtractBudget 把配额临时调小，测试结束恢复。
+func withExtractBudget(t *testing.T, bytes, files int64) {
+	t.Helper()
+	oldBytes, oldFiles := maxExtractBytes, maxExtractFiles
+	maxExtractBytes, maxExtractFiles = bytes, files
+	t.Cleanup(func() { maxExtractBytes, maxExtractFiles = oldBytes, oldFiles })
+}
+
+// copyTarIntoRoot 把 makeTar 造出来的归档放进沙箱根目录（Extract 只接受 Root 里的
+// 相对路径）。
+func copyTarIntoRoot(t *testing.T, root, name string, members map[string]string) {
+	t.Helper()
+	data, err := os.ReadFile(makeTar(t, members))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, name), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// 解压出来的内容超过配额时整次中止，暂存目录和已解出的文件都不能留在项目里。
+func TestExtractRejectsOversizeArchive(t *testing.T) {
+	requireTools(t, TarBin)
+	withExtractBudget(t, 1024, 100)
+
+	root := t.TempDir()
+	x, err := Open(root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer x.Close()
+
+	copyTarIntoRoot(t, root, "big.tar", map[string]string{"big.bin": strings.Repeat("x", 4096)})
+
+	if _, err := x.Extract(context.Background(), "big.tar"); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("应当报 ErrTooLarge，得到 %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "big.bin")); err == nil {
+		t.Error("超限的内容不该被搬进项目目录")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".fpkstudio-extract-") {
+			t.Errorf("暂存目录没有被清理：%s", e.Name())
+		}
+	}
+}
+
+// 文件数也要配额：一堆空文件不占字节，但一样能把 inode 吃光。
+func TestExtractRejectsTooManyFiles(t *testing.T) {
+	requireTools(t, TarBin)
+	withExtractBudget(t, 8<<30, 2)
+
+	root := t.TempDir()
+	x, err := Open(root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer x.Close()
+
+	copyTarIntoRoot(t, root, "many.tar", map[string]string{
+		"a.txt": "a", "b.txt": "b", "c.txt": "c",
+	})
+
+	if _, err := x.Extract(context.Background(), "many.tar"); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("应当报 ErrTooLarge，得到 %v", err)
+	}
+}
+
+// 标准库解压（Windows 上的 .gz / .bz2）在写的过程中就停下来，不能先写满盘再报错。
+func TestDecompressStdlibStopsAtLimit(t *testing.T) {
+	withExtractBudget(t, 1024, 100)
+
+	root := t.TempDir()
+	x, err := Open(root, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer x.Close()
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	if _, err := gw.Write(bytes.Repeat([]byte("y"), 8192)); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "big.txt.gz"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := x.Mkdir("stage", 0o700, false); err != nil {
+		t.Fatal(err)
+	}
+
+	err = x.decompressStdlib(x.Abs("big.txt.gz"), "big.txt.gz", "stage", KindGz)
+	if !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("应当报 ErrTooLarge，得到 %v", err)
+	}
+	fi, err := os.Stat(filepath.Join(root, "stage", "big.txt"))
+	if err != nil {
+		t.Fatalf("解压目标不存在: %v", err)
+	}
+	if fi.Size() > 1024 {
+		t.Errorf("写出的字节数 = %d，超过配额 1024", fi.Size())
+	}
+}

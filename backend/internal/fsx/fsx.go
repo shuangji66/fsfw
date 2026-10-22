@@ -30,6 +30,11 @@ var ErrExists = errors.New("目标已存在")
 // 故障的 500——以前 `/api/fs/write {"path":"../x"}` 会回 500「路径不允许包含 ..」。
 var ErrInvalidPath = errors.New("路径不合法")
 
+// ErrTooLarge 表示内容超过配置的配额（目前是解压）。
+//
+// 单独一个哨兵是为了让 HTTP 层能把它翻成 413，而不是混进 500。
+var ErrTooLarge = errors.New("内容超过上限")
+
 // Entry 是目录列表里的一项。
 type Entry struct {
 	Name    string `json:"name"`

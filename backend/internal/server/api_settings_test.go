@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -139,5 +140,25 @@ func TestTrimRoutesRemoved(t *testing.T) {
 		if rec := serve(s, http.MethodGet, path, nil); rec.Code != http.StatusNotFound {
 			t.Errorf("%s 状态码 = %d，期望 404", path, rec.Code)
 		}
+	}
+}
+
+// 切换失败时不能把坏路径留在 state.json 里，也不能改变内存里生效的目录。
+func TestSettingsPutRejectsBadPathWithoutPersisting(t *testing.T) {
+	s, _ := newTestServer(t)
+	bad := filepath.Join(t.TempDir(), "does-not-exist")
+
+	code, body := doJSON(t, s, "/api/settings", map[string]any{"projectRoot": bad})
+	if code != http.StatusBadRequest {
+		t.Fatalf("不存在的目录：状态码 = %d，期望 400（%v）", code, body)
+	}
+	if got := s.prj.ProjectRoot(); got != filepath.Join(s.cfg.DataDir, "projects") {
+		t.Errorf("切换失败后项目根目录 = %q，应当保持默认", got)
+	}
+	if got := s.state.Dirs().ProjectRoot; got != "" {
+		t.Errorf("切换失败后 state 里仍有 %q", got)
+	}
+	if data, err := os.ReadFile(s.cfg.StateFile); err == nil && strings.Contains(string(data), bad) {
+		t.Errorf("state.json 里残留了失败路径：%s", data)
 	}
 }

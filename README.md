@@ -135,7 +135,9 @@ $env:VITE_FSFW_API_BASE="http://127.0.0.1:18080"
 npm run dev
 ```
 
-`--token ""` 会关闭鉴权，只适合本机开发。非 Windows 机器上可用
+`--token ""` 会关闭鉴权，只适合本机开发。想保留 token 又要跨域调 API，加
+`--dev`（或 `FSFW_DEV=1`）——只有开发模式才会把任意 localhost 端口当作 CORS 源；
+`npm run dev` 的 Tauri 开发构建会自动带上它。非 Windows 机器上可用
 `scripts/build-backend.sh` 生成对应目标三元组名称的后端，再 `npx tauri dev`。
 
 ## 安装与卸载
@@ -154,13 +156,15 @@ npm run dev
 - 关闭主窗口 = 收进托盘；托盘菜单「退出」才会结束进程（同时停掉 Go 后端）。
 - 覆盖安装 / 升级 / 卸载之前，请先从托盘菜单退出：后台进程还在时 Windows Installer
   会提示「文件正在使用」，要求先关掉程序。
-- 卸载会删除安装目录、快捷方式、WebView2 缓存，并弹出询问：
+- 卸载会删除安装目录、快捷方式、WebView2 缓存。交互式卸载（双击、控制面板）
+  还会弹出询问：
 
   > 是否同时删除用户数据？`Documents\fpkstudio`（项目、导出、日志、设置）
 
   选「否」保留数据，重装后继续用；选「是」整目录删除。只处理默认数据目录：如果你在设置里
   把项目目录 / 导出目录改到了 `Documents\fpkstudio` 之外，那些目录不会被卸载程序碰。
-- 静默卸载不想被询问时，显式传 `CLEANDOCS`：
+- 静默 / 基本 UI 卸载（`/qn`、`/qb`）没有人能点确认框，**默认保留数据、不弹窗**。
+  要连数据一起删，传 `CLEANDOCS=1`；想显式保留也可以传 `CLEANDOCS=0`：
 
   ```bat
   msiexec /x "fpkstudio for Windows_1.0.0_x64_zh-CN.msi" /qn CLEANDOCS=0
@@ -192,6 +196,8 @@ npm run dev
 - 每次启动生成一次性 token；文件权限 `0600` 的 `run/server.json` 只给外壳读。
 - 所有 `/api/*` 都校验 token；下载、`<img>`、EventSource 用查询参数携带 token。
 - 文件操作仍然走 `os.Root` 沙箱，项目根 / 导出目录之外的路径不可达。
+- 解压有配额（8 GB / 20 万文件）：单文件的 `.gz` / `.bz2` 边写边限流，tar / zip
+  解开后统一校验，超限的暂存内容不会留在项目里。
 - 前端不放宽 CSP（生产环境无 `unsafe-eval`，`script-src 'self'`）。
 
 ## 目录结构

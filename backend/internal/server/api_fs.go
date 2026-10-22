@@ -31,6 +31,8 @@ func fsError(action string, err error) error {
 		return badRequest("%s：%v", action, err)
 	case errors.Is(err, fsx.ErrExists):
 		return fail(http.StatusConflict, "%s：%v", action, err)
+	case errors.Is(err, fsx.ErrTooLarge):
+		return fail(http.StatusRequestEntityTooLarge, "%s：%v", action, err)
 	case errors.Is(err, fs.ErrPermission):
 		return fail(http.StatusForbidden, "%s：%v", action, err)
 	default:

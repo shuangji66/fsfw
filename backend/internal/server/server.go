@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"runtime/debug"
 	"strconv"
@@ -25,6 +24,7 @@ import (
 
 	"fsfw/internal/config"
 	"fsfw/internal/fnpack"
+	"fsfw/internal/fsx"
 	"fsfw/internal/logging"
 	"fsfw/internal/projects"
 	"fsfw/internal/state"
@@ -185,7 +185,7 @@ func (s *Server) tokenOK(r *http.Request) bool {
 func (s *Server) cors(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
-		allowed := originAllowed(origin)
+		allowed := originAllowed(origin, s.allowDevOrigins())
 		if allowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Add("Vary", "Origin")
@@ -204,13 +204,22 @@ func (s *Server) cors(next http.Handler) http.Handler {
 	})
 }
 
+// allowDevOrigins 判断是否放行任意 localhost 端口。
+//
+// Vite 开发服务器每次可能换端口，固定白名单不现实；但这是开发期的便利，不该
+// 在生产构建里也生效——那时用户浏览器里任何一个本地页面都不该能读这个 API。
+// 鉴权关闭（纯浏览器开发）时放开没有额外风险：反正 token 都没有。
+func (s *Server) allowDevOrigins() bool {
+	return s.cfg.Dev || s.cfg.Token == ""
+}
+
 // originAllowed 判断 Origin 是否在白名单里。
-func originAllowed(origin string) bool {
+func originAllowed(origin string, allowDev bool) bool {
 	switch origin {
 	case "http://tauri.localhost", "https://tauri.localhost", "tauri://localhost":
 		return true
 	}
-	return isLocalDevOrigin(origin)
+	return allowDev && isLocalDevOrigin(origin)
 }
 
 // isLocalDevOrigin 认 http://localhost:<any> 与 http://127.0.0.1:<any>（Vite 开发）。
@@ -500,13 +509,15 @@ func queryRel(r *http.Request) (string, error) {
 		return ".", nil
 	}
 	// 路径一律以 projects 根为基准，例如 "myapp/config/privilege"。
-	p = strings.TrimPrefix(path.Clean("/"+p), "/")
-	if p == "" {
-		// 空串是「项目根」：以前 `?path=../../` 会归一成 ""，而前端拿它当目录缓存的键，
-		// 于是同一个根目录出现 "" 和 "." 两种写法、缓存对不上。
-		p = "."
+	//
+	// 走 fsx.Rel 而不是 `path.Clean("/"+p)`：以前 `?path=../../` 会被静默归一成根，
+	// 沙箱确实没被穿透，但用户手误时改 / 删的是根内同名文件，事后完全对不上账。
+	// 现在含 `..` 的输入直接 400，让调用方自己改。
+	rel, err := fsx.Rel(p)
+	if err != nil {
+		return "", err
 	}
-	return p, nil
+	return rel, nil
 }
 
 // pathParam 取出 path 参数：先看查询串，查询串里没有再看 JSON 请求体。
