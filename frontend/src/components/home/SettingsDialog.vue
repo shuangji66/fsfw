@@ -236,7 +236,6 @@ async function pick(slot: Slot) {
   }
 
   const current = currentOf(slot)
-  if (fromUserOf(slot) && current && !(await confirmReplace(current))) return
 
   busy.value = true
   try {
@@ -250,6 +249,9 @@ async function pick(slot: Slot) {
       ElMessage.info(t('settings.dirs.unchanged'))
       return
     }
+    // 选完新目录再确认：先确认再开选择器的话，用户还没选就会看到
+    // 「确定把目录设置为当前目录吗」这种莫名其妙的提示。
+    if (fromUserOf(slot) && current && !(await confirmSwitch(slot, current, target))) return
     await save(slot, target)
   } catch (e) {
     ElMessage.error(hostErrorMessage(e))
@@ -290,7 +292,16 @@ async function editPath(slot: Slot) {
 
   try {
     // 清空等于「恢复默认」：和「恢复默认」按钮一样先确认一次。
-    if (!value && fromUserOf(slot) && current) await confirmClear(current)
+    if (!value) {
+      if (fromUserOf(slot) && current) await confirmClear(current)
+      await save(slot, '')
+      return
+    }
+    if (value === current) {
+      ElMessage.info(t('settings.dirs.unchanged'))
+      return
+    }
+    if (fromUserOf(slot) && current && !(await confirmSwitch(slot, current, value))) return
     await save(slot, value)
   } catch (e) {
     if (e === 'cancel' || e === 'close') return
@@ -324,11 +335,12 @@ async function save(slot: Slot, path: string) {
   }
 }
 
-async function confirmReplace(path: string): Promise<boolean> {
+async function confirmSwitch(slot: Slot, from: string, to: string): Promise<boolean> {
+  const isProject = slot === 'projectRoot'
   try {
     await ElMessageBox.confirm(
-      t('settings.dirs.replaceConfirm', { path }),
-      t('settings.dirs.replaceTitle'),
+      t(isProject ? 'settings.dirs.switchProjectConfirm' : 'settings.dirs.switchOutputConfirm', { from, to }),
+      t(isProject ? 'settings.dirs.switchProjectTitle' : 'settings.dirs.switchOutputTitle'),
       { type: 'warning', confirmButtonText: t('common.confirm'), cancelButtonText: t('common.cancel') },
     )
     return true

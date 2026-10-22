@@ -632,10 +632,15 @@ export default {
         'Enter an absolute path (for example C:\\Users\\me\\Documents\\fpkstudio\\projects); leave it empty to restore the default.',
       editPathInvalid:
         'Enter an absolute path (for example C:\\Users\\me\\Documents\\fpkstudio\\projects), or leave it empty for the default',
-      replaceTitle: 'Change directory',
-      replaceConfirm: 'Set the directory to {path}?',
+      switchProjectTitle: 'Switch project root',
+      switchProjectConfirm:
+        'The project root will switch from {from} to {to}. Existing files are not moved or deleted; after the switch only projects in the new directory are shown.',
+      switchOutputTitle: 'Switch output directory',
+      switchOutputConfirm:
+        'The output directory will switch from {from} to {to}. Existing artifacts are not moved or deleted; future builds copy artifacts to the new directory (a copy still stays in the project folder).',
       clearTitle: 'Restore default directory',
-      clearConfirm: 'Restore the default directory? The current {path} will no longer be used.',
+      clearConfirm:
+        'Restore the default directory? The current {path} will no longer be used. Existing files are not moved or deleted.',
     },
     about: {
       title: 'About',

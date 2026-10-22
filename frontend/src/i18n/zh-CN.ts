@@ -623,10 +623,14 @@ export default {
       editPathHint: '输入绝对路径（例如 C:\\Users\\me\\Documents\\fpkstudio\\projects）；留空恢复默认目录。',
       editPathInvalid:
         '请输入绝对路径（例如 C:\\Users\\me\\Documents\\fpkstudio\\projects），或留空恢复默认',
-      replaceTitle: '更换目录',
-      replaceConfirm: '确定把目录设置为 {path} 吗？',
+      switchProjectTitle: '切换项目根目录',
+      switchProjectConfirm:
+        '项目根目录将从 {from} 切换到 {to}。已有文件不会被移动或删除；应用之后只显示新目录里的项目。',
+      switchOutputTitle: '切换导出目录',
+      switchOutputConfirm:
+        '导出目录将从 {from} 切换到 {to}。已有产物不会被移动或删除；之后打包会把产物复制到新目录（项目目录里仍保留一份）。',
       clearTitle: '恢复默认目录',
-      clearConfirm: '确定恢复默认目录吗？当前的 {path} 会被替换。',
+      clearConfirm: '恢复默认目录？当前的 {path} 将不再使用；已有文件不会被移动或删除。',
     },
     about: {
       title: '关于',
