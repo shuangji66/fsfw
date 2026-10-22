@@ -62,6 +62,11 @@ Windows 10 / 11 上浏览、编辑、打包 fnOS 的 fpk 项目，产出标准 `
 
 ### 命令
 
+> MSI 只能在 Windows 上生成（需要 WiX + MSVC 链接器）。Linux / macOS 上可以跑后端测试、
+> 前端检查和 `cargo check --target x86_64-pc-windows-msvc`，但出不了安装包。
+> 当前只构建 x64 安装包；ARM64 需要把 `scripts/build-backend.ps1` 的 `GOARCH` 和
+> Tauri 的构建目标一起改掉。
+
 ```powershell
 npm install
 npm --prefix frontend install

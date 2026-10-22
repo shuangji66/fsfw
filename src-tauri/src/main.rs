@@ -130,7 +130,7 @@ fn is_app_url(url: &tauri::Url) -> bool {
         "http" | "https" => {
             let host = url.host_str().unwrap_or_default();
             host == "tauri.localhost"
-                || (cfg!(debug_assertions) && matches!(host, "localhost" | "127.0.0.1"))
+                || (tauri::is_dev() && matches!(host, "localhost" | "127.0.0.1"))
         }
         _ => false,
     }
