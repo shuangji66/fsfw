@@ -84,6 +84,13 @@ fn startup(app: &mut tauri::App) -> Result<(), String> {
         .min_inner_size(960.0, 620.0)
         .center()
         .initialization_script(script)
+        // 界面里的拖放（导入 fpk、把图片拖进图标编辑器）全是 HTML5 DnD。
+        //
+        // Windows 上必须关掉 Tauri 自带的拖放处理器：它一注册，wry 就会给 WebView2
+        // 调 SetAllowExternalDrop(false) 把文件拖放抢到窗口层，页面连 dragover /
+        // drop 都收不到——表现就是「拖进去有光标，松手什么也没发生」。关掉之后由
+        // WebView2 自己处理，页面的事件才会正常派发。
+        .disable_drag_drop_handler()
         // 站外链接交给默认浏览器；应用本身只允许停在 Tauri 自己的页面上。
         .on_navigation(|url| {
             if is_app_url(url) {

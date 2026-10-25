@@ -133,6 +133,12 @@ vendor/fnpack.exe         随包分发的官方 fnpack（amd64），不要用 sr
 - Go 后端的 stdout 被重定向到 `logs/shell.log`；不要往 stdout 打印需要用户立刻看到的东西，
   真正的用户提示走 `dialogs` / 前端。
 - 托盘 `TrayIcon` 由 Tauri 的 manager 持有，局部变量 drop 不会消失，但不要只 `mem::forget`。
+- **HTML5 拖放**：界面里的拖放（导入 fpk、把图片拖进图标编辑器）走的是浏览器 DnD，
+  所以主窗口必须 `disable_drag_drop_handler()`（`src-tauri/src/main.rs`）。Tauri 默认
+  会注册自己的拖放处理器，wry 随之给 WebView2 调 `SetAllowExternalDrop(false)`，页面
+  连 `dragover` / `drop` 都收不到，表现为「拖到窗口上有光标，松手什么也没发生」。
+  去掉原生处理器后，掉在拖放区以外的文件会变成 WebView2 的导航目标，所以 `main.ts`
+  里还有一层 `dragover` / `drop` 的默认行为拦截，别删。
 - 卸载自定义动作在 `InstallValidate` 之后运行，此时安装目录里的文件还在；不要把它挪到
   `RemoveFiles` 之后。
 - MSI 组件 GUID：`externalBin` 由 bundler 每次随机生成。改 `externalBin` 列表 / 名称时

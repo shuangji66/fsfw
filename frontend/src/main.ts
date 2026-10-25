@@ -35,6 +35,16 @@ useLocaleStore()
 // 手机上键盘顶起来时把页面缩到键盘以上（写 --kb-height，见 utils/viewport.ts）。
 initViewportAdaptation()
 
+// 桌面端 WebView2 把文件拖放交回页面处理（见 src-tauri 的 disable_drag_drop_handler）。
+// 代价是「文件掉在拖放区以外」会走浏览器默认动作：WebView2 把那个文件当成导航目标
+// （页面被换掉，或者去拉外部程序）。这里统一兜住，文件拖放只由各自的拖放区
+// （导入面板、图标编辑器）处理。
+function blockDefaultFileDrop(event: DragEvent) {
+  if (Array.from(event.dataTransfer?.types ?? []).includes('Files')) event.preventDefault()
+}
+window.addEventListener('dragover', blockDefaultFileDrop)
+window.addEventListener('drop', blockDefaultFileDrop)
+
 // 图标全部注册为全局组件，模板里直接写 <el-icon><Folder /></el-icon>。
 for (const [name, component] of Object.entries(ElementPlusIcons)) {
   app.component(name, component)
