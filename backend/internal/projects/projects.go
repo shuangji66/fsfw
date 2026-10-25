@@ -16,7 +16,6 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 	"unicode"
 
@@ -1170,8 +1169,9 @@ func (m *Manager) ImportPath(ctx context.Context, absPath string) (ProjectInfo, 
 
 // moveIntoProjects 把暂存出来的项目搬到项目根目录。
 //
-// 优先 rename（同文件系统时是瞬时的）；项目根目录可以是另一个挂载点上的用户
-// 目录，跨设备 rename 会 EXDEV，那时退回复制 + 删源。
+// 优先 rename（同文件系统时是瞬时的）；项目根目录可以是另一个磁盘上的用户目录
+// （数据目录在 C:、项目根在 D: 是很常见的配置），跨设备 rename 会失败，那时退回
+// 复制 + 删源。
 func (m *Manager) moveIntoProjects(s *rootsSnapshot, stage, rel string) error {
 	src := m.home.Abs(stage)
 	dst := s.prj.Abs(rel)
@@ -1180,18 +1180,30 @@ func (m *Manager) moveIntoProjects(s *rootsSnapshot, stage, rel string) error {
 	if err == nil {
 		return nil
 	}
-	// 只有「跨设备」才退回复制（项目根可以落在另一个挂载点上）。
+	// 只有「跨设备」才退回复制（项目根可以落在另一个磁盘上）。
 	//
 	// **不能对所有失败都兜底**：目标已存在时 rename 报 ENOTEMPTY，而 fsx.CopyTree 是
 	// 合并语义（逐文件 O_TRUNC），退回去等于把另一个项目的文件覆盖掉，还报成功。
 	// 目标存在就该老老实实报错，由调用方换个名字（见 freeProjectName）。
-	if !errors.Is(err, syscall.EXDEV) {
+	//
+	// 跨设备判断必须走 fsx.CrossDevice：Windows 上跨卷 rename 报的是
+	// ERROR_NOT_SAME_DEVICE(17)，而 Go 里的 syscall.EXDEV 在 Windows 上是个自造值
+	// （APPLICATION_ERROR + iota），直接比 EXDEV 会让兜底永远不触发。
+	if !fsx.CrossDevice(err) {
 		return fmt.Errorf("移动到项目目录失败: %w", err)
 	}
 	if _, statErr := os.Lstat(dst); statErr == nil {
 		return fmt.Errorf("%w：%s", ErrExists, rel)
 	}
 	if copyErr := fsx.CopyTree(src, dst); copyErr != nil {
+		// 复制到一半失败会留下「半个项目」：清掉，别让它出现在项目列表里，也别让
+		// 用户重试时被 freeProjectName 挤到一个 -<时间戳> 的名字上。dst 在复制前
+		// 已经确认不存在，这里删的一定是我们自己刚写的东西。
+		if _, statErr := os.Lstat(dst); statErr == nil {
+			if rmErr := os.RemoveAll(dst); rmErr != nil {
+				m.log.Warnf("清理复制失败的项目目录 %s 失败: %v", dst, rmErr)
+			}
+		}
 		return fmt.Errorf("移动到项目目录失败: %v（尝试复制也没成功: %w）", err, copyErr)
 	}
 	if rmErr := m.home.Remove(stage, true); rmErr != nil {
